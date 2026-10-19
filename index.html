@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>md-editor</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="editor"></main>
+    <div id="prompt" hidden>
+      <span id="prompt-label"></span><input id="prompt-input" spellcheck="false" autocomplete="off" />
+    </div>
+    <footer id="statusline">
+      <span id="sl-mode"></span>
+      <span id="sl-file"></span>
+      <span id="sl-message"></span>
+      <span id="sl-spacer"></span>
+      <span id="sl-pending"></span>
+      <span id="sl-sels"></span>
+      <span id="sl-pos"></span>
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

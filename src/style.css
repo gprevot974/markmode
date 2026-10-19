@@ -1,0 +1,333 @@
+/* Kanagawa wave. Prose is set in a proportional face; code stays monospace. */
+:root {
+  --bg: #1f1f28;
+  --bg-dim: #16161d;
+  --bg-line: #2a2a37;
+  --bg-raised: #363646;
+  --fg: #dcd7ba;
+  --fg-dim: #727169;
+  --fg-muted: #c8c093;
+  --blue: #7e9cd8;
+  --violet: #957fb8;
+  --aqua: #7aa89f;
+  --green: #98bb6c;
+  --autumn-green: #76946a;
+  --yellow: #e6c384;
+  --boat-yellow: #c0a36e;
+  --orange: #ffa066;
+  --pink: #d27e99;
+  --red: #ff5d62;
+  --spring-blue: #7fb4ca;
+  --spring-violet: #9cabca;
+  --selection: #2d4f67;
+  --selection-dim: #223249;
+
+  --prose-font: "Charter", "Iowan Old Style", "Georgia", serif;
+  --ui-font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --mono-font: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+  --measure: 46rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--ui-font);
+}
+
+#editor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Editor surface ──────────────────────────────────────────────────────── */
+
+.cm-editor {
+  height: 100%;
+  outline: none !important;
+}
+
+.cm-scroller {
+  padding: 3rem 1.5rem 40vh;
+}
+
+.cm-content {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0;
+}
+
+.cm-line {
+  padding: 0 0.25rem;
+}
+
+/* cursorline = true */
+.cursorline .cm-activeLine {
+  background: color-mix(in srgb, var(--bg-line) 60%, transparent) !important;
+}
+
+/* ── Modes and cursors ───────────────────────────────────────────────────── */
+
+/* Outside insert mode the block cursor replaces CodeMirror's bar. */
+.mode-normal .cm-cursorLayer,
+.mode-select .cm-cursorLayer {
+  display: none;
+}
+
+.cm-editor .cm-selectionLayer .cm-selectionBackground {
+  background: var(--selection-dim) !important;
+}
+
+.mode-select .cm-editor .cm-selectionLayer .cm-selectionBackground {
+  background: color-mix(in srgb, var(--violet) 30%, var(--bg)) !important;
+}
+
+.hx-cursor {
+  background: var(--fg-muted);
+  color: var(--bg);
+  border-radius: 1px;
+}
+
+.hx-cursor-primary {
+  background: var(--fg);
+}
+
+.mode-select .hx-cursor-primary {
+  background: var(--violet);
+}
+
+.hx-cursor-eol {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.2em;
+  vertical-align: text-bottom;
+}
+
+.hx-jump-label {
+  position: absolute;
+  z-index: 5;
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--orange);
+  font-family: var(--mono-font);
+  font-size: 0.8em;
+  font-weight: 700;
+  line-height: 1.6;
+  pointer-events: none;
+}
+
+/* ── Live preview ────────────────────────────────────────────────────────── */
+
+.md-h {
+  font-family: var(--ui-font);
+  font-weight: 700;
+  color: var(--blue);
+  line-height: 1.3;
+}
+.md-h1 {
+  font-size: 1.9em;
+  padding-top: 0.6em !important;
+  padding-bottom: 0.2em !important;
+}
+.md-h2 {
+  font-size: 1.45em;
+  padding-top: 0.7em !important;
+  color: var(--spring-blue);
+}
+.md-h3 {
+  font-size: 1.2em;
+  padding-top: 0.5em !important;
+  color: var(--aqua);
+}
+.md-h4,
+.md-h5,
+.md-h6 {
+  font-size: 1.05em;
+  color: var(--spring-violet);
+}
+
+.md-strong {
+  font-weight: 700;
+  color: var(--yellow);
+}
+.md-em {
+  font-style: italic;
+  color: var(--pink);
+}
+.md-strike {
+  text-decoration: line-through;
+  color: var(--fg-dim);
+}
+.md-code {
+  font-family: var(--mono-font);
+  font-size: 0.85em;
+  color: var(--green);
+  background: var(--bg-dim);
+  border-radius: 3px;
+  padding: 0.05em 0.25em;
+}
+.md-link {
+  color: var(--spring-blue);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--spring-blue) 40%, transparent);
+  text-underline-offset: 3px;
+}
+.md-url {
+  color: var(--fg-dim);
+}
+.md-comment {
+  color: var(--fg-dim);
+  font-family: var(--mono-font);
+  font-size: 0.8em;
+}
+.md-bullet,
+.md-listmark {
+  color: var(--orange);
+}
+.md-bullet {
+  display: inline-block;
+  width: 0.6em;
+}
+.md-task {
+  color: var(--orange);
+}
+.md-task-done {
+  color: var(--autumn-green);
+}
+.md-quote {
+  border-left: 3px solid var(--violet);
+  padding-left: 1rem !important;
+  color: var(--spring-violet);
+  font-style: italic;
+}
+.md-codeblock {
+  font-family: var(--mono-font);
+  font-size: 0.82em;
+  line-height: 1.55;
+  background: var(--bg-dim);
+  padding-left: 1rem !important;
+}
+.md-hr {
+  border-bottom: 1px solid var(--bg-raised);
+  line-height: 0.8;
+  margin-bottom: 0.8em;
+}
+
+.md-table-wrap {
+  padding: 0.5em 0.25rem 0.8em;
+  overflow-x: auto;
+}
+.md-table {
+  border-collapse: collapse;
+  font-family: var(--ui-font);
+  font-size: 0.82em;
+  line-height: 1.45;
+  width: 100%;
+}
+.md-table th,
+.md-table td {
+  border: 1px solid var(--bg-raised);
+  padding: 0.35em 0.7em;
+  vertical-align: top;
+  text-align: left;
+}
+.md-table th {
+  background: var(--bg-line);
+  color: var(--blue);
+}
+.md-table tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--bg-line) 45%, transparent);
+}
+.md-table strong {
+  color: var(--yellow);
+}
+.md-table code {
+  font-family: var(--mono-font);
+  color: var(--green);
+}
+.md-table a {
+  color: var(--spring-blue);
+}
+
+/* ── Statusline and prompt ───────────────────────────────────────────────── */
+
+#statusline,
+#prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  height: 26px;
+  padding: 0 0.6rem 0 0;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  background: var(--bg-dim);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+#prompt {
+  padding-left: 0.6rem;
+  gap: 0.25rem;
+  background: var(--bg);
+}
+#prompt[hidden] {
+  display: none;
+}
+#prompt-label {
+  color: var(--blue);
+}
+#prompt-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+}
+
+#sl-mode {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 0.7rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--blue);
+}
+.mode-insert #sl-mode {
+  background: var(--autumn-green);
+}
+.mode-select #sl-mode {
+  background: var(--violet);
+}
+#sl-file.dirty::after {
+  content: " [+]";
+  color: var(--orange);
+}
+#sl-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-dim);
+}
+#sl-message.error {
+  color: var(--red);
+}
+#sl-spacer {
+  flex: 1;
+}
+#sl-pending {
+  color: var(--orange);
+}
