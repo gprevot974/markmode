@@ -37,15 +37,48 @@ import {
 } from "./motions.ts";
 import { wordObject, paragraphObject, pairObject, pairFor, findEnclosingPair, matchBracket } from "./textobjects.ts";
 import { startJump } from "./jumplabels.ts";
+import { textObjectInfo } from "./docs.ts";
+import { spellCommands } from "../spell.ts";
+import type { PromptOptions } from "../ui/prompt.ts";
+
+export const windowCommands = [
+  "rotate_view",
+  "hsplit",
+  "vsplit",
+  "hsplit_new",
+  "vsplit_new",
+  "transpose_view",
+  "wclose",
+  "wonly",
+  "jump_view_left",
+  "jump_view_down",
+  "jump_view_up",
+  "jump_view_right",
+  "swap_view_left",
+  "swap_view_down",
+  "swap_view_up",
+  "swap_view_right",
+] as const;
+export type WindowCommand = (typeof windowCommands)[number];
 
 /** What commands need from the surrounding app. */
 export interface Host {
   message(text: string, kind?: "info" | "error"): void;
-  prompt(label: string, onSubmit: (value: string) => void, initial?: string): void;
+  prompt(label: string, opts: Omit<PromptOptions, "label">): void;
   runTypable(cmdline: string): Promise<void>;
-  openFile(): Promise<void>;
+  commandLine(): void;
   clipboardRead(): Promise<string>;
   clipboardWrite(text: string): Promise<void>;
+  filePicker(inCurrentDir: boolean): void;
+  bufferPicker(): void;
+  gotoBuffer(which: "next" | "previous" | "last"): void;
+  windowCommand(cmd: WindowCommand): void;
+}
+
+/** A which-key popup: a title and (keys, description) rows. */
+export interface Info {
+  title: string;
+  rows: [string, string][];
 }
 
 export interface Ctx {
@@ -54,7 +87,7 @@ export interface Ctx {
   count: number;
   hasCount: boolean;
   /** Waits for the next key as a character (for `f`, `r`, `mi`, ...). */
-  readChar(label: string, cb: (ch: string) => void, onCancel?: () => void): void;
+  readChar(label: string, cb: (ch: string) => void, onCancel?: () => void, info?: Info): void;
 }
 
 export type Command = (ctx: Ctx) => void | Promise<void>;
@@ -253,15 +286,19 @@ function scrollLines(dir: 1 | -1): Command {
 
 function textObject(around: boolean): Command {
   return (ctx) =>
-    ctx.readChar(around ? "ma" : "mi", (ch) => {
-      const { view } = ctx;
-      transform(view, (r, text, doc) => {
-        if (ch === "w") return wordObject(text, r, around, false);
-        if (ch === "W") return wordObject(text, r, around, true);
-        if (ch === "p") return paragraphObject(doc, r, around);
-        return pairObject(text, r, ch, around);
-      });
-    });
+    ctx.readChar(
+      around ? "ma" : "mi",
+      (ch) => {
+        transform(ctx.view, (r, text, doc) => {
+          if (ch === "w") return wordObject(text, r, around, false);
+          if (ch === "W") return wordObject(text, r, around, true);
+          if (ch === "p") return paragraphObject(doc, r, around);
+          return pairObject(text, r, ch, around);
+        });
+      },
+      undefined,
+      { title: around ? "Match around" : "Match inside", rows: textObjectInfo },
+    );
 }
 
 function regexFrom(pattern: string): RegExp | null {
@@ -274,28 +311,45 @@ function regexFrom(pattern: string): RegExp | null {
   }
 }
 
-function selectRegex(split: boolean): Command {
-  return ({ view, host }) =>
-    host.prompt(split ? "split:" : "select:", (pattern) => {
-      const re = regexFrom(pattern);
-      if (!re) return host.message(`invalid regex: ${pattern}`, "error");
-      const out: SelectionRange[] = [];
-      for (const r of view.state.selection.ranges) {
-        const slice = view.state.sliceDoc(r.from, r.to);
-        let last = 0;
-        for (const m of slice.matchAll(re)) {
-          if (split) {
-            if (m.index > last) out.push(EditorSelection.range(r.from + last, r.from + m.index));
-          } else if (m[0].length) {
-            out.push(EditorSelection.range(r.from + m.index, r.from + m.index + m[0].length));
-          }
-          last = m.index + m[0].length;
-        }
-        if (split && last < slice.length) out.push(EditorSelection.range(r.from + last, r.to));
+function regexMatches(view: EditorView, base: EditorSelection, pattern: string, split: boolean): SelectionRange[] | null {
+  const re = regexFrom(pattern);
+  if (!re) return null;
+  const out: SelectionRange[] = [];
+  for (const r of base.ranges) {
+    const slice = view.state.sliceDoc(r.from, r.to);
+    let last = 0;
+    for (const m of slice.matchAll(re)) {
+      if (split) {
+        if (m.index > last) out.push(EditorSelection.range(r.from + last, r.from + m.index));
+      } else if (m[0].length) {
+        out.push(EditorSelection.range(r.from + m.index, r.from + m.index + m[0].length));
       }
-      if (!out.length) return host.message("nothing selected", "error");
-      setSelection(view, out, out.length - 1);
+      last = m.index + m[0].length;
+    }
+    if (split && last < slice.length) out.push(EditorSelection.range(r.from + last, r.to));
+  }
+  return out;
+}
+
+// `s` and `S`, previewing the resulting selections while the regex is typed.
+function selectRegex(split: boolean): Command {
+  return ({ view, host }) => {
+    const original = view.state.selection;
+    const show = (sel: EditorSelection) => view.dispatch({ selection: sel, userEvent: "select" });
+    host.prompt(split ? "split:" : "select:", {
+      onChange(pattern) {
+        const out = pattern ? regexMatches(view, original, pattern, split) : null;
+        show(out?.length ? EditorSelection.create(out, out.length - 1) : original);
+      },
+      onSubmit(pattern) {
+        const out = regexMatches(view, original, pattern, split);
+        if (!out) return show(original), host.message(`invalid regex: ${pattern}`, "error");
+        if (!out.length) return show(original), host.message("nothing selected", "error");
+        setSelection(view, out, out.length - 1);
+      },
+      onCancel: () => show(original),
     });
+  };
 }
 
 const splitOnNewline: Command = ({ view }) => {
@@ -347,36 +401,53 @@ function rotate(dir: 1 | -1): Command {
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
+/** The next match after (or before) `from`, wrapping around the document. */
+function findMatch(text: string, re: RegExp, from: SelectionRange, forward: boolean) {
+  const matches = [...text.matchAll(re)].filter((m) => m[0].length);
+  if (!matches.length) return null;
+  let m = forward
+    ? matches.find((m) => m.index >= from.to)
+    : [...matches].reverse().find((m) => m.index + m[0].length <= from.from);
+  const wrapped = !m;
+  m ??= forward ? matches[0] : matches[matches.length - 1];
+  return { range: EditorSelection.range(m.index, m.index + m[0].length), wrapped };
+}
+
 function searchFrom(view: EditorView, host: Host, forward: boolean, add: boolean) {
   const pattern = registers.get("/")?.[0];
   if (!pattern) return host.message("no search pattern", "error");
   const re = regexFrom(pattern);
   if (!re) return host.message(`invalid regex: ${pattern}`, "error");
-  const text = textOf(view.state.doc);
-  const main = view.state.selection.main;
-  const matches = [...text.matchAll(re)].filter((m) => m[0].length);
-  if (!matches.length) return host.message(`no matches for ${pattern}`, "error");
-  let m = forward
-    ? matches.find((m) => m.index >= main.to)
-    : [...matches].reverse().find((m) => m.index + m[0].length <= main.from);
-  if (!m) {
-    m = forward ? matches[0] : matches[matches.length - 1];
-    host.message("search wrapped around");
-  }
-  const found = EditorSelection.range(m.index, m.index + m[0].length);
+  const found = findMatch(textOf(view.state.doc), re, view.state.selection.main, forward);
+  if (!found) return host.message(`no matches for ${pattern}`, "error");
+  if (found.wrapped) host.message("search wrapped around");
   if (add) {
-    const ranges = [...view.state.selection.ranges, found];
+    const ranges = [...view.state.selection.ranges, found.range];
     setSelection(view, ranges, ranges.length - 1);
-  } else setSelection(view, [found], 0);
+  } else setSelection(view, [found.range], 0);
 }
 
+// `/` and `?`, jumping to the first match while the pattern is typed.
 function search(forward: boolean): Command {
-  return ({ view, host }) =>
-    host.prompt(forward ? "search:" : "rsearch:", (pattern) => {
-      if (!pattern) return;
-      registers.set("/", [pattern]);
-      searchFrom(view, host, forward, false);
+  return ({ view, host }) => {
+    const original = view.state.selection;
+    const restore = () => view.dispatch({ selection: original, scrollIntoView: true });
+    host.prompt(forward ? "search:" : "rsearch:", {
+      onChange(pattern) {
+        const re = pattern ? regexFrom(pattern) : null;
+        const found = re && findMatch(textOf(view.state.doc), re, original.main, forward);
+        if (found) view.dispatch({ selection: EditorSelection.create([found.range]), scrollIntoView: true });
+        else restore();
+      },
+      onSubmit(pattern) {
+        if (!pattern) return restore();
+        registers.set("/", [pattern]);
+        view.dispatch({ selection: original });
+        searchFrom(view, host, forward, false);
+      },
+      onCancel: restore,
     });
+  };
 }
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -456,7 +527,16 @@ function pasteClipboard(where: PasteWhere): Command {
   };
 }
 
-function enterInsert(view: EditorView, at: (r: SelectionRange, text: string, doc: Text) => number) {
+// Like Helix's `restore_cursor`: leaving insert mode entered with `a` puts the
+// cursor back on the last character typed rather than the one after it.
+let restoreCursor = false;
+
+function enterInsert(
+  view: EditorView,
+  at: (r: SelectionRange, text: string, doc: Text) => number,
+  restore = false,
+) {
+  restoreCursor = restore;
   const { doc } = view.state;
   const text = textOf(doc);
   const ranges = view.state.selection.ranges.map((r) => EditorSelection.cursor(at(r, text, doc)));
@@ -646,9 +726,12 @@ const exitInsert: Command = ({ view }) => {
   if (mode === "normal") return;
   const { doc } = view.state;
   const text = textOf(doc);
-  const ranges = view.state.selection.ranges.map((r) =>
-    mode === "insert" ? toSel(point(text, r.head)) : toSel(point(text, cursor(text, toRange(r)))),
-  );
+  const ranges = view.state.selection.ranges.map((r) => {
+    if (mode !== "insert") return toSel(point(text, cursor(text, toRange(r))));
+    const back = restoreCursor && r.head > doc.lineAt(r.head).from;
+    return toSel(point(text, back ? prevBoundary(text, r.head) : r.head));
+  });
+  restoreCursor = false;
   view.dispatch({
     selection: EditorSelection.create(ranges, view.state.selection.mainIndex),
     effects: setMode.of("normal"),
@@ -694,12 +777,12 @@ export const commands: Record<string, Command> = {
     if (extending(view)) view.dispatch({ effects: setMode.of("normal") });
   },
   insert_mode: ({ view }) => enterInsert(view, (r) => r.from),
-  append_mode: ({ view }) => enterInsert(view, (r) => r.to),
+  append_mode: ({ view }) => enterInsert(view, (r) => r.to, true),
   insert_at_line_start: ({ view }) => enterInsert(view, (r, _t, doc) => firstNonWhitespace(doc, r.from)),
   insert_at_line_end: ({ view }) => enterInsert(view, (r, _t, doc) => doc.lineAt(r.to > r.from ? r.to - 1 : r.to).to),
   open_below: openLine(true),
   open_above: openLine(false),
-  command_mode: ({ host }) => host.prompt(":", (line) => host.runTypable(line)),
+  command_mode: ({ host }) => host.commandLine(),
 
   // Motions
   move_char_left: remember(moveChar(-1)),
@@ -816,8 +899,16 @@ export const commands: Record<string, Command> = {
   paste_clipboard_before: pasteClipboard("before"),
   replace_selections_with_clipboard: pasteClipboard("replace"),
 
-  // Files
-  file_picker: ({ host }) => host.openFile(),
+  // Files, buffers and windows
+  ...spellCommands,
+
+  file_picker: ({ host }) => host.filePicker(false),
+  file_picker_in_current_directory: ({ host }) => host.filePicker(true),
+  buffer_picker: ({ host }) => host.bufferPicker(),
+  goto_next_buffer: ({ host }) => host.gotoBuffer("next"),
+  goto_previous_buffer: ({ host }) => host.gotoBuffer("previous"),
+  goto_last_accessed_file: ({ host }) => host.gotoBuffer("last"),
+  ...Object.fromEntries(windowCommands.map((name): [string, Command] => [name, ({ host }) => host.windowCommand(name)])),
 
   // Insert mode
   delete_word_backward: deleteWordBackward,

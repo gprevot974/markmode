@@ -1,9 +1,13 @@
-// Helix's `goto_word` (`gw`, bound to Enter in your config): two-letter labels
-// over every word in view; typing a label selects that word.
+// Helix's `goto_word` (`gw`, bound to Enter in your config): the first two
+// letters of every word in view are replaced by a label; typing a label
+// selects that word.
 
-import { EditorSelection, StateEffect, StateField } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import { EditorSelection, type EditorState, Prec, type Range as DecoRange, StateEffect, StateField } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
+import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import type { Host } from "./commands.ts";
+import { activeLines } from "../preview/livePreview.ts";
+import { nextBoundaryIn } from "./state.ts";
 
 interface Label {
   from: number;
@@ -18,47 +22,59 @@ interface JumpState {
 
 const setJump = StateEffect.define<JumpState | null>();
 
-class LabelWidget extends WidgetType {
-  readonly text: string;
-  constructor(text: string) {
-    super();
-    this.text = text;
+// The label is painted over the word's first two characters, which stay laid
+// out but transparent: with proportional type, replacing the letters would
+// change the line's width and make it reflow. Once the first character is
+// typed, only the second one is left to show, as in Helix.
+const labelMark = (text: string) => Decoration.mark({ class: "hx-jump", attributes: { "data-label": text } });
+
+function labelDecorations(state: EditorState, { labels, typed }: JumpState): DecorationSet {
+  const decos: DecoRange<Decoration>[] = [];
+  for (const l of labels) {
+    const end = nextBoundaryIn(state.doc, nextBoundaryIn(state.doc, l.from));
+    decos.push(labelMark(l.label.slice(typed.length)).range(l.from, end));
   }
-  eq(other: LabelWidget) {
-    return other.text === this.text;
-  }
-  toDOM() {
-    const span = document.createElement("span");
-    span.className = "hx-jump-label";
-    span.textContent = this.text;
-    return span;
-  }
+  return Decoration.set(decos, true);
 }
 
-export const jumpLabels = StateField.define<DecorationSet>({
-  create: () => Decoration.none,
-  update(deco, tr) {
-    for (const e of tr.effects) {
-      if (!e.is(setJump)) continue;
-      if (!e.value) return Decoration.none;
-      const { labels, typed } = e.value;
-      return Decoration.set(
-        labels.map((l) =>
-          Decoration.widget({ widget: new LabelWidget(l.label.slice(typed.length)), side: -1 }).range(l.from),
-        ),
-        true,
-      );
-    }
-    return tr.docChanged ? Decoration.none : deco;
-  },
-  provide: (f) => EditorView.decorations.from(f),
-});
+// Highest precedence makes the marks the innermost spans, so the label takes
+// the font of its word (bold, heading) and no inner span can recolor the text.
+export const jumpLabels = Prec.highest(
+  StateField.define<DecorationSet>({
+    create: () => Decoration.none,
+    update(deco, tr) {
+      for (const e of tr.effects) {
+        if (e.is(setJump)) return e.value ? labelDecorations(tr.state, e.value) : Decoration.none;
+      }
+      return tr.docChanged ? Decoration.none : deco;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  }),
+);
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz";
 const WORD = /[\p{L}\p{N}_][\p{L}\p{N}\p{M}_]+/gu;
 
+/** Whether the live preview hides `pos` (a link's URL, a rendered table). */
+function hiddenByPreview(state: EditorState, pos: number, activeLines: Set<number>): boolean {
+  for (let node = syntaxTree(state).resolveInner(pos, 1); node.parent; node = node.parent) {
+    if (node.name === "Table") {
+      const first = state.doc.lineAt(node.from).number;
+      const last = state.doc.lineAt(node.to).number;
+      for (let n = first; n <= last; n++) if (activeLines.has(n)) return false;
+      return true;
+    }
+    if (["URL", "LinkTitle", "LinkLabel"].includes(node.name) && node.parent?.name === "Link") {
+      return !activeLines.has(state.doc.lineAt(pos).number);
+    }
+  }
+  return false;
+}
+
 function wordsInView(view: EditorView): { from: number; to: number }[] {
-  const main = view.state.selection.main;
+  const { state } = view;
+  const main = state.selection.main;
+  const active = activeLines(state);
   const words: { from: number; to: number }[] = [];
   for (const { from, to } of view.visibleRanges) {
     const slice = view.state.sliceDoc(from, to);
@@ -67,6 +83,7 @@ function wordsInView(view: EditorView): { from: number; to: number }[] {
       const end = start + m[0].length;
       // The word the cursor is already on is not a jump target.
       if (start <= main.head && main.head <= end && start <= main.anchor && main.anchor <= end) continue;
+      if (hiddenByPreview(state, start, active)) continue;
       words.push({ from: start, to: end });
     }
   }

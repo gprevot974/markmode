@@ -48,9 +48,12 @@ node scripts/build-docx.ts input.md [output.docx]
 
 | Command | |
 |---|---|
-| `:w [path]`, `:wq`, `:q`, `:q!` | write, write and close, close |
-| `:o [path]`, `:new` | open (a dialog when no path is given), new scratch buffer |
-| `:reload` | take the version on disk |
+| `:w [path]`, `:wa`, `:wq`, `:wqa` | write the buffer, all buffers; and close |
+| `:q`, `:q!`, `:qa`, `:qa!` | close the window (the last one closes the app), close the app |
+| `:o [path]`, `:new` | open a file (a dialog when no path is given), new scratch buffer |
+| `:vs [path]`, `:sp [path]`, `:vnew`, `:hnew` | open in a vertical / horizontal split |
+| `:bc`, `:bco`, `:bca`, `:bn`, `:bp` | close buffer, others, all; next / previous buffer |
+| `:reload`, `:reload-all` | take the version on disk |
 | `:export-docx [path]` | export to Word |
 | `:<n>` | go to line *n* |
 
@@ -62,7 +65,46 @@ Normal and select mode (`v`) follow Helix: `hjkl`, `w b e W B E`, `f t F T`, `A-
 `gg ge gh gl gs gt gc gb gw`, `x X`, `%`, `s S A-s`, `; A-; , A-,`, `C A-C`, `( )`,
 `_`, `/ ? n N *`, `y p P R`, `d c A-d A-c`, `r ~ \` A-\``, `> <`, `J`, `u U`,
 `mi ma mm ms mr md`, `zz zt zb zj zk`, `C-u C-d C-b C-f`, `[space ]space`,
-`space f/y/p/P/R/e`. Counts work (`3w`, `5j`, `12G`).
+`space y/p/P/R/e`. Counts work (`3w`, `5j`, `12G`).
+
+## Theme
+
+Kanagawa, as in your Helix config: wave when macOS is in dark mode, lotus when
+it is light. `:theme light`, `:theme dark` or `:theme auto` switches, and the
+choice is remembered; the default is `theme` in `src/config.ts`.
+
+## Spelling
+
+Misspelled words get a wavy underline, checked by the macOS spell checker, so
+it uses the languages set in System Settings (with automatic detection) and the
+words you taught it in other apps. Code, URLs and comments are skipped, and so
+is the word you're typing. `]s` / `[s` jump to the next / previous misspelling;
+`space a` lists suggestions at the cursor (a number picks one, `a` adds the word
+to the dictionary, `i` ignores it until the app quits). Turn it off with
+`spellcheck` in `src/config.ts`.
+
+## Buffers and windows
+
+As in Helix, every file you open stays open as a buffer. `space f` opens the
+file picker on the workspace (the nearest folder above the current file that
+holds `.git`), `space F` on the current file's folder, and `space b` the buffer
+picker. In a picker, type to fuzzy-filter, Enter opens, `C-s` / `C-v` open in a
+horizontal / vertical split. `ga` goes back to the last buffer, `gn` / `gp`
+cycle through them.
+
+`space w` or `C-w` is window mode: `v` / `s` split, `w` next window, `h j k l`
+move between windows, `H J K L` swap them, `t` transposes, `q` closes, `o`
+keeps only the current one, `n v` / `n s` split with a scratch buffer.
+
+Closing the window, ⌘W or ⌘Q with unsaved buffers asks whether to save them.
+`:q` and `:qa` refuse instead, like Helix; `:q!` discards. Windows
+on the same buffer edit the same text, but undo is per window: `u` undoes the
+edits made in that window.
+
+Pressing `g`, `m`, `z`, `space`, `C-w`, `mi` or `ma` shows Helix's which-key popup.
+`:` completes command names, showing each one's doc; Tab and Shift-Tab cycle,
+and `:o`, `:w` and `:export-docx` complete file paths. `/`, `?`, `s` and `S`
+preview their result as you type, and Esc restores the selection.
 
 Insert mode keeps CodeMirror's editing (with the macOS Emacs keys) and adds
 `C-w`, `C-u` and `jk`. Pressing Enter in a list continues it.

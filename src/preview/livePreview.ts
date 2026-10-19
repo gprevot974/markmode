@@ -2,24 +2,30 @@
 // hidden, except on lines that hold a selection, which show their raw source
 // so every character stays reachable by Helix motions.
 
-import { type EditorState, type Range as DecoRange, StateField } from "@codemirror/state";
+import { type EditorState, type Range as DecoRange, RangeSet, StateField } from "@codemirror/state";
 import { syntaxTree, ensureSyntaxTree } from "@codemirror/language";
 import {
   Decoration,
   type DecorationSet,
   EditorView,
+  GutterMarker,
+  gutterLineClass,
   ViewPlugin,
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
 import { renderTable } from "./table.ts";
 
-/** One-based numbers of lines touched by a selection. */
-function activeLines(state: EditorState): Set<number> {
+/**
+ * One-based numbers of lines touched by a selection. A range's end is
+ * exclusive: the cursor on an empty line covers its line break, which ends at
+ * the next line's start, but that next line is not selected.
+ */
+export function activeLines(state: EditorState): Set<number> {
   const lines = new Set<number>();
   for (const r of state.selection.ranges) {
     const first = state.doc.lineAt(r.from).number;
-    const last = state.doc.lineAt(r.to).number;
+    const last = state.doc.lineAt(r.to > r.from ? r.to - 1 : r.to).number;
     for (let n = first; n <= last && lines.size < 10_000; n++) lines.add(n);
   }
   return lines;
@@ -232,4 +238,57 @@ const tablePreview = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-export const livePreview = [inlinePreview, tablePreview];
+// ── Line numbers ─────────────────────────────────────────────────────────────
+// Headings and code blocks set their own size and padding; their line numbers
+// get a class with matching metrics so they line up with the text.
+
+class LineClass extends GutterMarker {
+  constructor(cls: string) {
+    super();
+    this.elementClass = cls;
+  }
+  eq(other: GutterMarker) {
+    return other.elementClass === this.elementClass;
+  }
+}
+
+const lineClasses = new Map<string, LineClass>();
+const lineClass = (cls: string) => {
+  let m = lineClasses.get(cls);
+  if (!m) lineClasses.set(cls, (m = new LineClass(cls)));
+  return m;
+};
+
+function buildGutterClasses(state: EditorState): RangeSet<GutterMarker> {
+  const tree = ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state);
+  const marks: DecoRange<GutterMarker>[] = [];
+  const eachLine = (from: number, to: number, cls: string) => {
+    for (let pos = from; pos <= to; ) {
+      const line = state.doc.lineAt(pos);
+      marks.push(lineClass(cls).range(line.from));
+      pos = line.to + 1;
+    }
+  };
+  tree.iterate({
+    enter(node) {
+      const heading = /^(?:ATX|Setext)Heading(\d)$/.exec(node.name);
+      if (heading) eachLine(node.from, node.to, `gutter-h${heading[1]}`);
+      else if (node.name === "FencedCode" || node.name === "CodeBlock") eachLine(node.from, node.to, "gutter-code");
+      else if (node.name === "HorizontalRule") eachLine(node.from, node.from, "gutter-hr");
+      else return;
+      return false;
+    },
+  });
+  return RangeSet.of(marks, true);
+}
+
+const gutterClasses = StateField.define<RangeSet<GutterMarker>>({
+  create: buildGutterClasses,
+  update(marks, tr) {
+    if (tr.docChanged || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return buildGutterClasses(tr.state);
+    return marks;
+  },
+  provide: (f) => gutterLineClass.from(f),
+});
+
+export const livePreview = [inlinePreview, tablePreview, gutterClasses];

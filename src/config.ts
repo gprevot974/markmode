@@ -4,8 +4,16 @@
 import type { KeyTrie } from "./helix/keymap.ts";
 
 export const config = {
+  // theme = "kanagawa": "auto" follows the macOS appearance (wave when dark,
+  // lotus when light); "dark" or "light" pins one. `:theme` overrides it.
+  theme: "auto" as "auto" | "light" | "dark",
+
   // [editor]
   cursorline: true,
+  // line-number = "absolute"; false hides the gutter
+  lineNumbers: true,
+  // Underline misspelled words, using the macOS spell checker and its languages
+  spellcheck: true,
   softWrap: true,
   // [editor.auto-save] focus-lost
   autoSaveOnFocusLost: true,

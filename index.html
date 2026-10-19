@@ -6,20 +6,30 @@
     <title>md-editor</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/style.css" />
+    <script>
+      // Pick light or dark before the first paint; src/theme/appearance.ts takes over.
+      try {
+        const t = localStorage.getItem("md-editor.theme");
+        const light = t === "light" || (t !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.dataset.theme = light ? "light" : "dark";
+      } catch {}
+    </script>
   </head>
   <body>
-    <main id="editor"></main>
-    <div id="prompt" hidden>
-      <span id="prompt-label"></span><input id="prompt-input" spellcheck="false" autocomplete="off" />
+    <main id="windows"></main>
+    <aside id="infobox" hidden></aside>
+    <div id="popup-stack">
+      <div id="completion-doc" hidden></div>
+      <div id="completion" hidden></div>
     </div>
-    <footer id="statusline">
-      <span id="sl-mode"></span>
-      <span id="sl-file"></span>
-      <span id="sl-message"></span>
-      <span id="sl-spacer"></span>
-      <span id="sl-pending"></span>
-      <span id="sl-sels"></span>
-      <span id="sl-pos"></span>
+    <footer id="bottom">
+      <div id="prompt" hidden>
+        <span id="prompt-label"></span><input id="prompt-input" spellcheck="false" autocomplete="off" />
+      </div>
+      <div id="messageline">
+        <span id="message"></span>
+        <span id="pending"></span>
+      </div>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

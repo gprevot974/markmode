@@ -1,4 +1,6 @@
-/* Kanagawa wave. Prose is set in a proportional face; code stays monospace. */
+/* Kanagawa: wave (dark) and lotus (light). The variables keep wave's color
+   names; lotus maps each to its own counterpart. Prose is set in a
+   proportional face; code stays monospace. */
 :root {
   --bg: #1f1f28;
   --bg-dim: #16161d;
@@ -19,13 +21,54 @@
   --red: #ff5d62;
   --spring-blue: #7fb4ca;
   --spring-violet: #9cabca;
-  --selection: #2d4f67;
-  --selection-dim: #223249;
+  /* Selections are lighter than the cursorline so they read on it. */
+  --sel: #2b3e57;
+  --sel-primary: #3a5f80;
+  --sel-select: #463a5e;
+  --sel-select-primary: #5c4a7d;
+  --cursorline: #24242f;
+  --gutter: #54546d;
+  --gutter-active: #ff9e3b;
+  --shadow: rgb(0 0 0 / 45%);
+  color-scheme: dark;
 
   --prose-font: "Charter", "Iowan Old Style", "Georgia", serif;
   --ui-font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   --mono-font: "JetBrains Mono", "SF Mono", "Menlo", monospace;
   --measure: 46rem;
+  --text-size: 18px;
+}
+
+:root[data-theme="light"] {
+  --bg: #f2ecbc;
+  --bg-dim: #e5ddb0;
+  --bg-line: #e7dba0;
+  --bg-raised: #d5cea3;
+  --fg: #545464;
+  --fg-dim: #8a8980;
+  --fg-muted: #43436c;
+  --blue: #4d699b;
+  --violet: #624c83;
+  --aqua: #597b75;
+  --green: #6f894e;
+  --autumn-green: #6e915f;
+  --yellow: #a96b00;
+  --boat-yellow: #836f4a;
+  --orange: #cc6d00;
+  --pink: #b35b79;
+  --red: #c84053;
+  --spring-blue: #4e8ca2;
+  --spring-violet: #766b90;
+  /* Darker than the cursorline, for the same reason as in wave. */
+  --sel: #c9cbd1;
+  --sel-primary: #9fb5c9;
+  --sel-select: #d6cce6;
+  --sel-select-primary: #b8a6d9;
+  --cursorline: #e9e1b2;
+  --gutter: #a09cac;
+  --gutter-active: #cc6d00;
+  --shadow: rgb(84 84 100 / 25%);
+  color-scheme: light;
 }
 
 * {
@@ -47,7 +90,36 @@ body {
   font-family: var(--ui-font);
 }
 
-#editor {
+/* ── Windows ─────────────────────────────────────────────────────────────── */
+
+#windows {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.split {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.split-row {
+  flex-direction: row;
+}
+.split-column {
+  flex-direction: column;
+}
+.split-row > * + * {
+  border-left: 1px solid var(--bg-raised);
+}
+.window {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.win-editor {
   flex: 1;
   min-height: 0;
 }
@@ -75,58 +147,99 @@ body {
 
 /* cursorline = true */
 .cursorline .cm-activeLine {
-  background: color-mix(in srgb, var(--bg-line) 60%, transparent) !important;
+  background: var(--cursorline) !important;
 }
 
 /* ── Modes and cursors ───────────────────────────────────────────────────── */
 
-/* Outside insert mode the block cursor replaces CodeMirror's bar. */
+/* Outside insert mode, selections and the block cursor are drawn as marks on
+   the text (see helix/cursor.ts); CodeMirror's own layers are hidden. */
 .mode-normal .cm-cursorLayer,
-.mode-select .cm-cursorLayer {
+.mode-select .cm-cursorLayer,
+.mode-normal .cm-selectionLayer,
+.mode-select .cm-selectionLayer {
   display: none;
 }
 
+/* Insert mode only ever has cursors, but keep the layer readable anyway. */
 .cm-editor .cm-selectionLayer .cm-selectionBackground {
-  background: var(--selection-dim) !important;
+  background: var(--sel-primary) !important;
 }
 
-.mode-select .cm-editor .cm-selectionLayer .cm-selectionBackground {
-  background: color-mix(in srgb, var(--violet) 30%, var(--bg)) !important;
+.hx-sel {
+  background: var(--sel);
+}
+.hx-sel-primary {
+  background: var(--sel-primary);
+}
+.mode-select .hx-sel {
+  background: var(--sel-select);
+}
+.mode-select .hx-sel-primary {
+  background: var(--sel-select-primary);
 }
 
 .hx-cursor {
   background: var(--fg-muted);
-  color: var(--bg);
   border-radius: 1px;
 }
-
 .hx-cursor-primary {
   background: var(--fg);
 }
-
 .mode-select .hx-cursor-primary {
   background: var(--violet);
 }
 
-.hx-cursor-eol {
+/* Text under the cursor or a selection drops its own background (inline code)
+   and, under the cursor, takes the inverse color. */
+.hx-cursor,
+.hx-cursor * {
+  color: var(--bg) !important;
+}
+.hx-cursor *,
+.hx-sel * {
+  background: transparent !important;
+}
+
+.hx-eol {
   display: inline-block;
-  width: 0.55em;
-  height: 1.2em;
+  width: 0.5em;
+  height: 1.25em;
   vertical-align: text-bottom;
 }
 
-.hx-jump-label {
+/* Jump labels: the word's first letters keep their place but turn invisible,
+   and the label sits over them. */
+.hx-jump {
+  position: relative;
+  color: transparent !important;
+}
+.hx-jump::after {
+  content: attr(data-label);
   position: absolute;
-  z-index: 5;
-  padding: 0 1px;
-  border-radius: 2px;
+  left: 0;
+  top: 0;
+  min-width: 100%;
+  /* The span's box is its font's content area; with the line's taller
+     line-height the label would sit lower than the letters it covers. */
+  line-height: normal;
+  color: var(--red);
   background: var(--bg);
-  color: var(--orange);
-  font-family: var(--mono-font);
-  font-size: 0.8em;
-  font-weight: 700;
-  line-height: 1.6;
-  pointer-events: none;
+  white-space: nowrap;
+}
+.cursorline .cm-activeLine .hx-jump::after {
+  background: var(--cursorline);
+}
+.md-code .hx-jump::after,
+.md-codeblock .hx-jump::after {
+  background: var(--bg-dim);
+}
+
+.hx-misspelled {
+  text-decoration: underline wavy color-mix(in srgb, var(--red) 75%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  text-decoration-skip-ink: none;
 }
 
 /* ── Live preview ────────────────────────────────────────────────────────── */
@@ -226,6 +339,31 @@ body {
   margin-bottom: 0.8em;
 }
 
+/* Line numbers take the metrics of their line (see the sizes above). */
+.cm-gutterElement.gutter-h1 {
+  padding-top: calc(var(--text-size) * 1.9 * 0.6) !important;
+  line-height: calc(var(--text-size) * 1.9 * 1.3) !important;
+}
+.cm-gutterElement.gutter-h2 {
+  padding-top: calc(var(--text-size) * 1.45 * 0.7) !important;
+  line-height: calc(var(--text-size) * 1.45 * 1.3) !important;
+}
+.cm-gutterElement.gutter-h3 {
+  padding-top: calc(var(--text-size) * 1.2 * 0.5) !important;
+  line-height: calc(var(--text-size) * 1.2 * 1.3) !important;
+}
+.cm-gutterElement.gutter-h4,
+.cm-gutterElement.gutter-h5,
+.cm-gutterElement.gutter-h6 {
+  line-height: calc(var(--text-size) * 1.05 * 1.3) !important;
+}
+.cm-gutterElement.gutter-code {
+  line-height: calc(var(--text-size) * 0.82 * 1.55) !important;
+}
+.cm-gutterElement.gutter-hr {
+  line-height: calc(var(--text-size) * 0.8) !important;
+}
+
 .md-table-wrap {
   padding: 0.5em 0.25rem 0.8em;
   overflow-x: auto;
@@ -262,14 +400,16 @@ body {
   color: var(--spring-blue);
 }
 
-/* ── Statusline and prompt ───────────────────────────────────────────────── */
+/* ── Statuslines, prompt and messages ────────────────────────────────────── */
 
-#statusline,
-#prompt {
+.statusline,
+#prompt,
+#messageline {
   display: flex;
   align-items: center;
   gap: 0.9rem;
   height: 26px;
+  flex-shrink: 0;
   padding: 0 0.6rem 0 0;
   font-family: var(--mono-font);
   font-size: 12px;
@@ -278,12 +418,16 @@ body {
   white-space: nowrap;
 }
 
-#prompt {
+#prompt,
+#messageline {
   padding-left: 0.6rem;
-  gap: 0.25rem;
   background: var(--bg);
 }
-#prompt[hidden] {
+#prompt {
+  gap: 0.25rem;
+}
+#prompt[hidden],
+#prompt:not([hidden]) + #messageline {
   display: none;
 }
 #prompt-label {
@@ -298,7 +442,7 @@ body {
   font: inherit;
 }
 
-#sl-mode {
+.sl-mode {
   align-self: stretch;
   display: flex;
   align-items: center;
@@ -307,27 +451,259 @@ body {
   color: var(--bg);
   background: var(--blue);
 }
-.mode-insert #sl-mode {
+.mode-insert .sl-mode {
   background: var(--autumn-green);
 }
-.mode-select #sl-mode {
+.mode-select .sl-mode {
   background: var(--violet);
 }
-#sl-file.dirty::after {
+.window:not(.active) .statusline {
+  color: var(--fg-dim);
+  background: var(--bg);
+}
+.window:not(.active) .sl-mode {
+  color: var(--fg-dim);
+  background: var(--bg-line);
+}
+.sl-file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sl-file.dirty::after {
   content: " [+]";
   color: var(--orange);
 }
-#sl-message {
+.sl-spacer {
+  flex: 1;
+}
+#message {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--fg-dim);
 }
-#sl-message.error {
+#message.error {
   color: var(--red);
 }
-#sl-spacer {
-  flex: 1;
-}
-#sl-pending {
+#pending {
   color: var(--orange);
+}
+
+/* ── Popups: which-key infobox and command-line completion ───────────────── */
+
+#infobox,
+#completion,
+#completion-doc {
+  position: fixed;
+  z-index: 20;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg-dim);
+  border: 1px solid var(--bg-raised);
+  border-radius: 4px;
+}
+#infobox[hidden],
+#completion[hidden],
+#completion-doc[hidden] {
+  display: none;
+}
+
+#infobox {
+  right: 12px;
+  bottom: 60px;
+  padding: 0.4rem 0.8rem 0.6rem;
+  max-height: 70vh;
+  overflow: auto;
+}
+.info-title {
+  text-align: center;
+  color: var(--blue);
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+.info-rows {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 1.2rem;
+}
+.info-keys {
+  color: var(--orange);
+}
+
+/* Above the prompt: the doc box (right-aligned), then the completion menu. */
+#popup-stack {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 26px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+#popup-stack > * {
+  position: static;
+}
+
+#completion {
+  align-self: stretch;
+  max-height: 40vh;
+  overflow: auto;
+  border-radius: 0;
+  border-width: 1px 0 0;
+  padding: 0.2rem 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+}
+#completion .item {
+  padding: 0 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#completion .item.selected {
+  background: var(--sel-primary);
+  color: var(--fg);
+}
+
+#completion-doc {
+  margin-right: 12px;
+  max-width: 34rem;
+  padding: 0.4rem 0.7rem;
+  white-space: normal;
+}
+
+/* ── Picker (space f, space b) ───────────────────────────────────────────── */
+
+#picker {
+  position: fixed;
+  z-index: 30;
+  inset: 5vh 4vw;
+  display: flex;
+  font-family: var(--mono-font);
+  font-size: 12.5px;
+  color: var(--fg);
+  background: var(--bg-dim);
+  border: 1px solid var(--bg-raised);
+  border-radius: 6px;
+  box-shadow: 0 12px 40px var(--shadow);
+  overflow: hidden;
+}
+.pk-main {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pk-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--bg-raised);
+}
+.pk-title {
+  color: var(--blue);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+.pk-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+}
+.pk-count {
+  color: var(--fg-dim);
+}
+.pk-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.2rem 0;
+}
+.pk-row {
+  height: 22px;
+  line-height: 22px;
+  padding: 0 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+.pk-row.selected {
+  background: var(--sel-primary);
+}
+.pk-prefix {
+  color: var(--fg-dim);
+  white-space: pre;
+  margin-right: 0.8rem;
+}
+.pk-hl {
+  color: var(--orange);
+  font-weight: 700;
+}
+.pk-preview {
+  flex: 1 1 50%;
+  min-width: 0;
+  overflow: auto;
+  padding: 0.5rem 0;
+  border-left: 1px solid var(--bg-raised);
+  background: var(--bg);
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+.pk-line {
+  padding: 0 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pk-line.current {
+  background: var(--bg-line);
+  color: var(--fg);
+}
+@media (max-width: 900px) {
+  .pk-preview {
+    display: none;
+  }
+}
+
+/* ── Menu at the cursor (spelling suggestions) ───────────────────────────── */
+
+#menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 12rem;
+  padding: 0.25rem 0;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg-dim);
+  border: 1px solid var(--bg-raised);
+  border-radius: 5px;
+  box-shadow: 0 8px 24px var(--shadow);
+  outline: none;
+}
+.menu-item {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.15rem 0.8rem 0.15rem 0.6rem;
+  white-space: nowrap;
+}
+.menu-item.selected {
+  background: var(--sel-primary);
+}
+.menu-key {
+  width: 1ch;
+  color: var(--orange);
+  font-family: var(--mono-font);
 }

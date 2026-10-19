@@ -7,6 +7,44 @@ export interface KeyTrie {
   [key: string]: Binding;
 }
 
+// Helix's window mode, under both `space w` and `C-w`.
+const windowKeys: KeyTrie = {
+  w: "rotate_view",
+  "C-w": "rotate_view",
+  s: "hsplit",
+  "C-s": "hsplit",
+  v: "vsplit",
+  "C-v": "vsplit",
+  t: "transpose_view",
+  "C-t": "transpose_view",
+  q: "wclose",
+  "C-q": "wclose",
+  o: "wonly",
+  "C-o": "wonly",
+  h: "jump_view_left",
+  "C-h": "jump_view_left",
+  left: "jump_view_left",
+  j: "jump_view_down",
+  "C-j": "jump_view_down",
+  down: "jump_view_down",
+  k: "jump_view_up",
+  "C-k": "jump_view_up",
+  up: "jump_view_up",
+  l: "jump_view_right",
+  "C-l": "jump_view_right",
+  right: "jump_view_right",
+  H: "swap_view_left",
+  J: "swap_view_down",
+  K: "swap_view_up",
+  L: "swap_view_right",
+  n: {
+    s: "hsplit_new",
+    "C-s": "hsplit_new",
+    v: "vsplit_new",
+    "C-v": "vsplit_new",
+  },
+};
+
 // A subset of Helix's default normal-mode keymap: the parts that make sense
 // for prose. Select mode uses the same table; motions extend instead of move.
 export const normalKeys: KeyTrie = {
@@ -93,6 +131,7 @@ export const normalKeys: KeyTrie = {
   "C-e": "scroll_down",
   "C-y": "scroll_up",
   esc: "exit_select_mode",
+  "C-w": windowKeys,
 
   g: {
     g: "goto_file_start",
@@ -104,6 +143,9 @@ export const normalKeys: KeyTrie = {
     c: "goto_window_center",
     b: "goto_window_bottom",
     w: "goto_word",
+    n: "goto_next_buffer",
+    p: "goto_previous_buffer",
+    a: "goto_last_accessed_file",
   },
   m: {
     m: "match_brackets",
@@ -121,10 +163,14 @@ export const normalKeys: KeyTrie = {
     j: "scroll_down",
     k: "scroll_up",
   },
-  "[": { space: "add_newline_above" },
-  "]": { space: "add_newline_below" },
+  "[": { space: "add_newline_above", s: "goto_prev_misspelling" },
+  "]": { space: "add_newline_below", s: "goto_next_misspelling" },
   space: {
     f: "file_picker",
+    F: "file_picker_in_current_directory",
+    b: "buffer_picker",
+    a: "spelling_suggestions",
+    w: windowKeys,
     y: "yank_to_clipboard",
     p: "paste_clipboard_after",
     P: "paste_clipboard_before",

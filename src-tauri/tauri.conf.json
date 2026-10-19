@@ -15,7 +15,8 @@
         "title": "md-editor",
         "width": 1000,
         "height": 800,
-        "backgroundColor": "#1F1F28"
+        "backgroundColor": "#1F1F28",
+        "titleBarStyle": "Transparent"
       }
     ],
     "security": { "csp": null }

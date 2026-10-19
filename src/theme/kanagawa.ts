@@ -1,82 +1,67 @@
-// Kanagawa (wave), the theme from your Helix config, for the editor and for
-// syntax highlighting inside code blocks.
+// Kanagawa, the theme from your Helix config, for the editor and for syntax
+// highlighting inside code blocks. Colors come from the CSS variables in
+// style.css, so switching between wave (dark) and lotus (light) is a matter
+// of setting `data-theme` on the root element.
 
 import { EditorView } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 
-export const k = {
-  sumiInk0: "#16161D",
-  sumiInk1: "#181820",
-  sumiInk3: "#1F1F28",
-  sumiInk4: "#2A2A37",
-  sumiInk5: "#363646",
-  sumiInk6: "#54546D",
-  waveBlue1: "#223249",
-  waveBlue2: "#2D4F67",
-  winterGreen: "#2B3328",
-  fujiWhite: "#DCD7BA",
-  oldWhite: "#C8C093",
-  fujiGray: "#727169",
-  katanaGray: "#717C7C",
-  oniViolet: "#957FB8",
-  crystalBlue: "#7E9CD8",
-  springViolet2: "#9CABCA",
-  springBlue: "#7FB4CA",
-  lightBlue: "#A3D4D5",
-  waveAqua2: "#7AA89F",
-  springGreen: "#98BB6C",
-  boatYellow2: "#C0A36E",
-  carpYellow: "#E6C384",
-  sakuraPink: "#D27E99",
-  waveRed: "#E46876",
-  peachRed: "#FF5D62",
-  surimiOrange: "#FFA066",
-  autumnGreen: "#76946A",
-  autumnRed: "#C34043",
-  roninYellow: "#FF9E3B",
-};
-
 const editorTheme = EditorView.theme(
   {
-    "&": { color: k.fujiWhite, backgroundColor: k.sumiInk3, height: "100%" },
+    "&": { color: "var(--fg)", backgroundColor: "var(--bg)", height: "100%" },
     // Set here rather than in style.css: CodeMirror's base theme is more specific.
     ".cm-scroller": {
       fontFamily: "var(--prose-font)",
-      fontSize: "18px",
+      fontSize: "var(--text-size)",
       lineHeight: "1.65",
     },
     // A centered column of readable width; CodeMirror otherwise lets it grow.
-    ".cm-content": { caretColor: k.oldWhite, flex: "0 1 var(--measure)", margin: "0 auto", minWidth: "0" },
-    ".cm-cursor, .cm-dropCursor": { borderLeftColor: k.oldWhite, borderLeftWidth: "2px" },
+    ".cm-content": { caretColor: "var(--fg-muted)", flex: "0 1 var(--measure)", margin: "0 auto", minWidth: "0" },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--fg-muted)", borderLeftWidth: "2px" },
     "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground":
-      { backgroundColor: k.waveBlue1 },
+      { backgroundColor: "var(--sel-primary)" },
     ".cm-activeLine": { backgroundColor: "transparent" },
-    ".cm-gutters": { display: "none" },
-    ".cm-panels": { backgroundColor: k.sumiInk1, color: k.fujiWhite },
+    // Line numbers sit just left of the text: the gutter takes the free space on
+    // the left, the text the free space on the right, so the pair stays centered.
+    ".cm-gutters": {
+      marginLeft: "auto",
+      backgroundColor: "transparent",
+      border: "none",
+      color: "var(--gutter)",
+      fontFamily: "var(--mono-font)",
+      fontSize: "13px",
+    },
+    ".cm-gutters ~ .cm-content": { marginLeft: "0" },
+    ".cm-lineNumbers .cm-gutterElement": {
+      lineHeight: "calc(var(--text-size) * 1.65)",
+      padding: "0 1.1rem 0 0.4rem",
+      minWidth: "3ch",
+    },
+    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--gutter-active)" },
+    ".cm-panels": { backgroundColor: "var(--bg-dim)", color: "var(--fg)" },
   },
-  { dark: true },
 );
 
 // Code inside fenced blocks, plus the few markdown tokens that are not
 // handled by the live preview's own classes.
 const highlight = HighlightStyle.define([
-  { tag: t.keyword, color: k.oniViolet },
-  { tag: [t.name, t.deleted, t.character, t.macroName], color: k.fujiWhite },
-  { tag: [t.function(t.variableName), t.labelName], color: k.crystalBlue },
-  { tag: [t.propertyName], color: k.carpYellow },
-  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: k.surimiOrange },
-  { tag: [t.definition(t.name), t.separator], color: k.fujiWhite },
-  { tag: [t.typeName, t.className, t.namespace], color: k.waveAqua2 },
-  { tag: [t.number, t.bool, t.atom], color: k.sakuraPink },
-  { tag: [t.operator, t.operatorKeyword], color: k.boatYellow2 },
-  { tag: [t.url, t.escape, t.regexp, t.link], color: k.springBlue },
-  { tag: [t.meta, t.comment], color: k.fujiGray, fontStyle: "italic" },
-  { tag: [t.string, t.special(t.string), t.inserted], color: k.springGreen },
-  { tag: t.invalid, color: k.peachRed },
-  { tag: t.processingInstruction, color: k.fujiGray },
-  { tag: t.contentSeparator, color: k.sumiInk6 },
-  { tag: t.quote, color: k.springViolet2 },
+  { tag: t.keyword, color: "var(--violet)" },
+  { tag: [t.name, t.deleted, t.character, t.macroName], color: "var(--fg)" },
+  { tag: [t.function(t.variableName), t.labelName], color: "var(--blue)" },
+  { tag: [t.propertyName], color: "var(--yellow)" },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: "var(--orange)" },
+  { tag: [t.definition(t.name), t.separator], color: "var(--fg)" },
+  { tag: [t.typeName, t.className, t.namespace], color: "var(--aqua)" },
+  { tag: [t.number, t.bool, t.atom], color: "var(--pink)" },
+  { tag: [t.operator, t.operatorKeyword], color: "var(--boat-yellow)" },
+  { tag: [t.url, t.escape, t.regexp, t.link], color: "var(--spring-blue)" },
+  { tag: [t.meta, t.comment], color: "var(--fg-dim)", fontStyle: "italic" },
+  { tag: [t.string, t.special(t.string), t.inserted], color: "var(--green)" },
+  { tag: t.invalid, color: "var(--red)" },
+  { tag: t.processingInstruction, color: "var(--fg-dim)" },
+  { tag: t.contentSeparator, color: "var(--gutter)" },
+  { tag: t.quote, color: "var(--spring-violet)" },
 ]);
 
 export const kanagawa = [editorTheme, syntaxHighlighting(highlight)];

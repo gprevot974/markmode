@@ -6,7 +6,8 @@ import { Prec, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { modeField } from "./state.ts";
 import { type Binding, type KeyTrie, isTrie, keyName } from "./keymap.ts";
-import { type Ctx, type Host, commands, pasteText } from "./commands.ts";
+import { type Ctx, type Host, type Info, commands, pasteText } from "./commands.ts";
+import { commandDocs, minorModeNames } from "./docs.ts";
 
 export interface Keymaps {
   normal: KeyTrie;
@@ -18,6 +19,25 @@ interface CharReader {
   onCancel?: () => void;
 }
 
+function describe(binding: Binding): string {
+  if (isTrie(binding)) return "…";
+  const names = Array.isArray(binding) ? binding : [binding];
+  return names.map((n) => (n.startsWith(":") ? n : (commandDocs[n] ?? n))).join(", ");
+}
+
+/** The which-key popup for a minor mode: keys bound to the same thing share a row. */
+function trieInfo(path: string[], trie: KeyTrie): Info {
+  const rows = new Map<string, string[]>();
+  for (const [key, binding] of Object.entries(trie)) {
+    const desc = isTrie(binding) ? (minorModeNames[[...path, key].join("")] ?? "…") : describe(binding);
+    rows.set(desc, [...(rows.get(desc) ?? []), key]);
+  }
+  return {
+    title: minorModeNames[path.join("")] ?? path.join(""),
+    rows: [...rows].map(([desc, keys]) => [keys.join(", "), desc]),
+  };
+}
+
 /** The character a key types, for keys that type one. */
 function charOf(key: string): string | null {
   if (key === "space") return " ";
@@ -26,7 +46,12 @@ function charOf(key: string): string | null {
   return [...key].length === 1 ? key : null;
 }
 
-export function helixKeys(host: Host, keys: Keymaps, onPending: (keys: string) => void): Extension {
+export function helixKeys(
+  host: Host,
+  keys: Keymaps,
+  onPending: (keys: string) => void,
+  onInfo: (info: Info | null) => void,
+): Extension {
   let pending: KeyTrie | null = null;
   let pendingKeys: string[] = [];
   let count = 0;
@@ -37,6 +62,7 @@ export function helixKeys(host: Host, keys: Keymaps, onPending: (keys: string) =
     pendingKeys = [];
     count = 0;
     onPending("");
+    onInfo(null);
   };
 
   async function run(binding: Binding, view: EditorView, n: number) {
@@ -45,9 +71,10 @@ export function helixKeys(host: Host, keys: Keymaps, onPending: (keys: string) =
       host,
       count: Math.max(1, n),
       hasCount: n > 0,
-      readChar(label, cb, onCancel) {
+      readChar(label, cb, onCancel, info) {
         reader = { cb, onCancel };
         onPending(label);
+        onInfo(info ?? null);
       },
     };
     const names = Array.isArray(binding) ? binding : [binding as string];
@@ -66,6 +93,7 @@ export function helixKeys(host: Host, keys: Keymaps, onPending: (keys: string) =
     const r = reader!;
     reader = null;
     onPending("");
+    onInfo(null);
     const ch = charOf(key);
     if (key === "esc" || ch === null) r.onCancel?.();
     else r.cb(ch);
@@ -83,6 +111,7 @@ export function helixKeys(host: Host, keys: Keymaps, onPending: (keys: string) =
       pending = binding;
       pendingKeys.push(key);
       onPending(`${count || ""}${pendingKeys.join("")}`);
+      onInfo(trieInfo(pendingKeys, binding));
       return;
     }
     const n = count;

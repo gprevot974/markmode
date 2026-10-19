@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "core:window:allow-set-title",
+    "core:window:allow-set-theme",
+    "core:window:allow-set-background-color",
     "core:window:allow-close",
     "dialog:default",
     "clipboard-manager:allow-read-text",
