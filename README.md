@@ -58,6 +58,7 @@ node scripts/build-docx.ts input.md [output.docx]
 | `:reload`, `:reload-all` | take the version on disk |
 | `:encoding [name]`, `:line-ending [lf\|crlf]` | show or change how the file is saved |
 | `:theme [name]` | show or change the theme |
+| `:config-open` | open your Helix config.toml |
 | `:export-docx [path]` | export to Word |
 | `:<n>` | go to line *n* |
 
@@ -77,9 +78,11 @@ The built-in theme is Kanagawa: wave when macOS is in dark mode, lotus when it
 is light. `:theme light`, `:theme dark` or `:theme auto` switches, and the
 choice is remembered.
 
-Any Helix theme works too: `:theme gruvbox`, with completion of every theme
-found in `~/.config/helix/themes` and in the Helix installation's runtime
-(Homebrew, Linux packages, a source checkout, or `$HELIX_RUNTIME`). Its UI
+Any Helix theme works too: `:theme gruvbox`. As in Helix, the theme shows as
+you type or tab to its name, and Esc puts the previous one back. Completion
+lists every theme found in `~/.config/helix/themes` and in the Helix
+installation's runtime (Homebrew, Linux packages, a source checkout, or
+`$HELIX_RUNTIME`). Its UI
 colors and its `markup.*` scopes color the editor and the preview. The name
 `kanagawa` means the built-in theme, which has a light half that Helix's lacks.
 
@@ -96,7 +99,7 @@ if set) and applied over the defaults in `src/config.ts`:
   editor lacks is skipped whole (a sequence run halfway would do something
   else), and a message lists the skipped ones the first time, and again when
   the list changes. `[keys.select]` is ignored: select mode shares the normal
-  mode bindings.
+  mode bindings. `:config-open` opens config.toml and lists them again.
 
 Set `readHelixConfig: false` in `src/config.ts` to ignore it.
 
@@ -148,7 +151,8 @@ edits made in that window.
 
 Pressing `g`, `m`, `z`, `space`, `C-w`, `mi` or `ma` shows Helix's which-key popup.
 `:` completes command names, showing each one's doc; Tab and Shift-Tab cycle,
-and `:o`, `:w` and `:export-docx` complete file paths. `/`, `?`, `s` and `S`
+and `:o`, `:w` and `:export-docx` complete file paths: Enter on a folder lists
+what is inside it, Enter on a file runs the command. `/`, `?`, `s` and `S`
 preview their result as you type, and Esc restores the selection.
 
 Insert mode keeps CodeMirror's editing (with the macOS Emacs keys) and adds

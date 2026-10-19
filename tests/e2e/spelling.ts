@@ -38,6 +38,29 @@ export default async function ({ page, type, press, ev, check }: Harness) {
   await type("i");
   check("ignoring a word clears all its marks", !(await flagged()).includes("teh"), await flagged());
 
+  // Code blocks far down a long file, beyond what the parser has reached at
+  // first, are still recognized as code.
+  const codeLines = await ev(async () => {
+    const text = "# T\n\n" + "Some prose line.\n\n".repeat(3000) + "```bash\nwrold group docker\n```\n\nA wrold outside.\n\n```\nmispelled fence\n```\n";
+    await backend.writeText("/long.md", text);
+    await app.openPath("/long.md");
+    const v = app.view;
+    v.dispatch({ selection: { anchor: v.state.doc.length }, scrollIntoView: true });
+    await new Promise((r) => setTimeout(r, 2000));
+    return [...document.querySelectorAll(".hx-misspelled")].map((e) => e.closest(".cm-line")!.textContent);
+  });
+  check("code blocks far down a long file are not checked", codeLines.length === 1 && codeLines[0] === "A wrold outside.", codeLines);
+
+  // A fence typed above flagged words makes them code (up to the next fence).
+  await type("/A wrold");
+  await press("Enter");
+  await type("O");
+  await type("```");
+  await press("Escape");
+  await page.waitForTimeout(800);
+  const fenced = await ev(() => [...document.querySelectorAll(".hx-misspelled")].map((e) => e.textContent));
+  check("words that become code lose their marks", fenced.length === 0, fenced);
+
   await ev(() => app.requestQuit());
   await page.waitForTimeout(200);
   check("quitting with unsaved buffers asks", dialogs.length === 1 && dialogs[0].includes("sample.md"), dialogs);

@@ -119,5 +119,43 @@ export default async function ({ page, type, press, ev, check }: Harness) {
   await press("Enter");
   const after = await ev(() => ({ files: [...document.querySelectorAll(".sl-file")].map((e) => e.textContent), docs: app.docs.length }));
   check(":bc closes the buffer, its window falls back", after.docs === 1 && after.files.every((f) => f === "/sample.md"), after);
-}
 
+  // Path completion, as in Helix: Enter on a folder lists its files, Enter on
+  // a file opens it.
+  const prompt = () =>
+    ev(() => ({
+      open: !document.getElementById("prompt")!.hidden,
+      value: (document.getElementById("prompt-input") as HTMLInputElement).value,
+      items: [...document.querySelectorAll("#completion .item")].map((e) => e.textContent),
+    }));
+  await type(":");
+  await type("o no");
+  await press("Tab");
+  await press("Enter");
+  await page.waitForTimeout(100);
+  const inFolder = await prompt();
+  check("Enter on a folder lists its files", inFolder.open && inFolder.value === "o notes/" && inFolder.items.includes("ideas.md"), inFolder);
+  await press("Tab");
+  await press("Enter");
+  check("Enter on a file opens it", !(await prompt()).open && (await files()).includes("/notes/ideas.md"), await files());
+
+  // ge on a last line that wraps over several rows shows all of it.
+  await ev(() => {
+    const long = Array(25).fill("A long paragraph that wraps.").join(" ");
+    app.view.dispatch({ changes: { from: 0, to: app.view.state.doc.length, insert: "# Top\n\n" + "Line\n\n".repeat(60) + long } });
+  });
+  await type("gg");
+  await type("ge");
+  const end = await ev(() => {
+    const scroller = app.view.scrollDOM;
+    const cursor = app.view.coordsAtPos(app.view.state.selection.main.head);
+    const box = scroller.getBoundingClientRect();
+    const last = app.view.coordsAtPos(app.view.state.doc.length);
+    return {
+      rows: Math.round((last.bottom - cursor.top) / 20),
+      endShown: !!last && last.bottom <= box.bottom,
+      cursorShown: !!cursor && cursor.top >= box.top && cursor.bottom <= box.bottom,
+    };
+  });
+  check("ge shows a wrapped last line down to its end, cursor still in view", end.rows > 3 && end.endShown && end.cursorShown, end);
+}

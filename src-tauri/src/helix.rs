@@ -72,6 +72,12 @@ pub fn helix_config() -> Result<Option<serde_json::Value>, String> {
     read_toml(&path).map(Some)
 }
 
+/// Where `config.toml` is, or would be.
+#[tauri::command]
+pub fn helix_config_path() -> String {
+    config_dir().join("config.toml").to_string_lossy().into_owned()
+}
+
 /// A theme file by name, as Helix finds it (`inherits` is left to the caller).
 #[tauri::command]
 pub fn helix_theme(name: String) -> Result<serde_json::Value, String> {

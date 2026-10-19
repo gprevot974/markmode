@@ -25,6 +25,7 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   const completion = await ev(() => [...document.querySelectorAll("#completion .item")].map((e) => e.textContent));
   check(":theme completes names", completion.includes("dark"), completion);
   await press("Tab");
+  check("tabbing to a theme previews it", (await theme()).mode === "dark");
   await press("Enter");
   check(":theme dark switches", (await theme()).mode === "dark");
   await restart();
@@ -41,6 +42,12 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
       return files[name];
     };
   });
+  await type(":");
+  await type("theme paper");
+  const previewed = await theme();
+  check("typing a theme name previews it", previewed.bg === "rgb(251, 248, 239)", previewed);
+  await press("Escape");
+  check("Esc puts the theme back", (await theme()).mode === "dark", await theme());
   await run("theme paper");
   const paper = await theme();
   check("a Helix theme sets the colors", paper.mode === "light" && paper.bg === "rgb(251, 248, 239)" && paper.h1 === "#cd0000", paper);

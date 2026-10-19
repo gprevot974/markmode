@@ -16,7 +16,7 @@ import { commands, type Host, type WindowCommand } from "./helix/commands.ts";
 import { livePreview } from "./preview/livePreview.ts";
 import { spellcheck } from "./spell.ts";
 import { kanagawa } from "./theme/kanagawa.ts";
-import { currentTheme, initTheme, setTheme, themeNames } from "./theme/appearance.ts";
+import { currentTheme, endThemePreview, initTheme, previewTheme, setTheme, themeNames } from "./theme/appearance.ts";
 import { applyHelixConfig } from "./helixConfig.ts";
 import { openPrompt, type Completion, type PromptOptions } from "./ui/prompt.ts";
 import { openPicker, type OpenHow } from "./ui/picker.ts";
@@ -510,7 +510,14 @@ class App implements Host {
   /** `:` with completion of command names and, for commands taking one, paths. */
   commandLine() {
     this.prompt(":", {
-      onSubmit: (line) => void this.runTypable(line),
+      onSubmit: (line) => void this.runTypable(line).finally(endThemePreview),
+      onCancel: endThemePreview,
+      // `:theme <name>` shows the theme as it is typed or tabbed to, as in Helix.
+      onChange: (line) => {
+        const name = /^\s*theme\s+(\S+)\s*$/.exec(line)?.[1];
+        if (name) previewTheme(name);
+        else endThemePreview();
+      },
       complete: (line) => this.completeCommandLine(line),
       docFor: (line) => findTypable(line.trim().split(/\s+/)[0].replace(/!$/, ""))?.doc,
     });
@@ -544,7 +551,7 @@ class App implements Host {
       .filter((e) => prefix.startsWith(".") || !e.name.startsWith("."))
       .map((e) => {
         const name = e.isDir ? `${e.name}/` : e.name;
-        return { insert: dirPart + name, from: space + 1, label: name };
+        return { insert: dirPart + name, from: space + 1, label: name, partial: e.isDir };
       });
   }
 
@@ -674,6 +681,16 @@ class App implements Host {
           if (!lineEndings.includes(arg as LineEnding)) return this.message("line-ending: lf or crlf", "error");
           doc.format = { ...doc.format, lineEnding: arg as LineEnding };
           return this.renderAllStatus();
+        case "config-open": {
+          const path = await backend.helixConfigPath();
+          if (!path) return this.message("no Helix config here", "error");
+          await this.openPath(path);
+          return this.message(
+            skippedKeys.length
+              ? `skipped bindings, using commands this editor lacks: ${skippedKeys.join("; ")}`
+              : "every binding in it is in use (changes apply on the next start)",
+          );
+        }
         case "theme":
           if (!arg) return this.message(`theme: ${currentTheme()}`);
           return await setTheme(arg);

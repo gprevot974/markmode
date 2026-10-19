@@ -23,6 +23,8 @@ const VARS_KEY = "md-editor.theme-vars";
 const systemLight = matchMedia("(prefers-color-scheme: light)");
 
 let choice: ThemeChoice = "auto";
+/** A theme shown while it is being picked in `:theme`, not yet chosen. */
+let preview: string | null = null;
 let generation = 0;
 const themes = new Map<string, Theme>();
 
@@ -46,7 +48,8 @@ async function helixTheme(name: string): Promise<Theme> {
 async function apply() {
   const gen = ++generation;
   const systemIsLight = systemLight.matches;
-  const name = typeof choice === "string" ? choice : systemIsLight ? choice.light : choice.dark;
+  const shown = preview ?? choice;
+  const name = typeof shown === "string" ? shown : systemIsLight ? shown.light : shown.dark;
   const builtin = BUILTIN[name];
   let light: boolean;
   let vars: Record<string, string> = {};
@@ -62,10 +65,10 @@ async function apply() {
   for (const v of [...root.style].filter((p) => p.startsWith("--"))) root.style.removeProperty(v);
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   root.dataset.theme = light ? "light" : "dark";
-  storage((s) => (builtin ? s.removeItem(VARS_KEY) : s.setItem(VARS_KEY, JSON.stringify({ light, vars }))));
+  if (!preview) storage((s) => (builtin ? s.removeItem(VARS_KEY) : s.setItem(VARS_KEY, JSON.stringify({ light, vars }))));
   // The title bar is transparent over the window, so it takes the theme's
   // background. Its text follows the system only while the theme does.
-  const followsSystem = builtin === "auto" || typeof choice !== "string";
+  const followsSystem = builtin === "auto" || typeof shown !== "string";
   const background = getComputedStyle(root).getPropertyValue("--bg").trim();
   void backend.setAppearance(followsSystem ? null : light ? "light" : "dark", background).catch(() => {});
 }
@@ -89,13 +92,33 @@ export async function initTheme(fallback: ThemeChoice): Promise<string | null> {
 export async function setTheme(name: string) {
   const previous = choice;
   choice = name;
+  preview = null;
   try {
     await apply();
   } catch (err) {
+    // Back to the previous theme, also over a preview that was showing.
     choice = previous;
+    await apply().catch(() => {});
     throw err;
   }
   storage((s) => s.setItem(KEY, name));
+}
+
+/** Shows a theme without choosing it; a name that is not a theme (yet) changes nothing. */
+export function previewTheme(name: string) {
+  if (name === preview) return;
+  const previous = preview;
+  preview = name;
+  apply().catch(() => {
+    if (preview === name) preview = previous;
+  });
+}
+
+/** Back to the chosen theme, after `:theme` was left or run. */
+export function endThemePreview() {
+  if (preview === null) return;
+  preview = null;
+  void apply().catch(() => {});
 }
 
 export function currentTheme(): string {

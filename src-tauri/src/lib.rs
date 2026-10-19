@@ -328,6 +328,7 @@ pub fn run() {
             recovery::recovery_remove,
             recovery::recovery_take,
             helix::helix_config,
+            helix::helix_config_path,
             helix::helix_theme,
             helix::helix_themes
         ])

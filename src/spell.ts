@@ -1,11 +1,13 @@
 // Spell-check: misspelled words get a wavy underline. The checking itself is
 // done by the system (the macOS spell checker, through the backend), first on
 // the whole document, then on the lines that change once typing pauses. Code,
-// URLs and HTML comments are skipped, and so is the word being typed.
+// URLs and HTML comments are skipped, and so is the word being typed. Telling
+// code from prose takes the syntax tree, so a part of the document is checked
+// only once the parser has reached it.
 
-import { EditorSelection, StateEffect } from "@codemirror/state";
-import { syntaxTree } from "@codemirror/language";
-import type { SyntaxNode } from "@lezer/common";
+import { EditorSelection, type EditorState, StateEffect } from "@codemirror/state";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import type { SyntaxNode, Tree } from "@lezer/common";
 import { Decoration, type DecorationSet, type EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { modeField } from "./helix/state.ts";
 import type { Command } from "./helix/commands.ts";
@@ -23,6 +25,12 @@ const instances = new Set<SpellPlugin>();
 
 const DELAY = 400;
 const CHUNK = 20_000;
+/**
+ * The parser stops a little past the window, so the checker moves it along in
+ * slices this short (milliseconds), a few frames apart, to keep typing smooth.
+ */
+const PARSE_SLICE = 5;
+const PARSE_PAUSE = 30;
 
 const SKIP = new Set([
   "InlineCode",
@@ -71,7 +79,12 @@ class SpellPlugin {
       if (this.inflight) this.inflight = map(this.inflight);
       u.changes.iterChangedRanges((_fa, _ta, from, to) => this.pending.push({ from, to }));
       this.schedule();
-    } else if (u.startState.field(modeField) !== u.state.field(modeField)) {
+    } else if (syntaxTree(u.startState) !== syntaxTree(u.state)) {
+      // The parser got further, or now sees code where it saw prose (after
+      // typing an opening fence): words found to be code lose their marks.
+      this.dropSkipped(u.state);
+    }
+    if (!u.docChanged && u.startState.field(modeField) !== u.state.field(modeField)) {
       // The word at the insert cursor was skipped while typing; check it now.
       const line = u.state.doc.lineAt(u.startState.selection.main.head);
       this.pending.push({ from: line.from, to: line.to });
@@ -102,6 +115,11 @@ class SpellPlugin {
           to = Math.min(to, cut);
         }
         this.pending = this.pending.filter((p) => p.from < from || p.to > to);
+        if (!ensureSyntaxTree(state, to, PARSE_SLICE)) {
+          this.pending.push({ from, to });
+          this.schedule(PARSE_PAUSE);
+          return;
+        }
         this.inflight = { from, to };
         const found = await checker.check(doc.sliceString(from, to));
         const span = this.inflight;
@@ -112,13 +130,15 @@ class SpellPlugin {
           this.pending.push(span);
           continue;
         }
+        // The parse done above lives in the parser's state until the next transaction.
+        const tree = ensureSyntaxTree(state, to, PARSE_SLICE) ?? syntaxTree(state);
         const insert = state.field(modeField) === "insert";
         const head = state.selection.main.head;
         const marks = found
           .map(([start, length]) => ({ from: from + start, to: from + start + length }))
           .filter((w) => !(insert && w.from <= head && head <= w.to))
           .filter((w) => !ignored.has(doc.sliceString(w.from, w.to).toLowerCase()))
-          .filter((w) => !skipped(this.view, w.from))
+          .filter((w) => !skipped(tree, w.from))
           .map((w) => misspelled.range(w.from, w.to));
         this.decorations = this.decorations.update({
           filter: (f, t) => t < from || f > to,
@@ -134,6 +154,18 @@ class SpellPlugin {
     }
   }
 
+  private dropSkipped(state: EditorState) {
+    let dropped = false;
+    const next = this.decorations.update({
+      filter: (from) => {
+        const keep = !skipped(syntaxTree(state), from);
+        dropped ||= !keep;
+        return keep;
+      },
+    });
+    if (dropped) this.decorations = next;
+  }
+
   destroy() {
     this.destroyed = true;
     clearTimeout(this.timer);
@@ -141,8 +173,8 @@ class SpellPlugin {
   }
 }
 
-function skipped(view: EditorView, pos: number): boolean {
-  for (let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1); node; node = node.parent) {
+function skipped(tree: Tree, pos: number): boolean {
+  for (let node: SyntaxNode | null = tree.resolveInner(pos, 1); node; node = node.parent) {
     if (SKIP.has(node.name)) return true;
   }
   return false;

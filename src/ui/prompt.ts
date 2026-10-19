@@ -10,6 +10,8 @@ export interface Completion {
   label: string;
   /** Shown in the doc box while this item is selected. */
   doc?: string;
+  /** Not a whole answer (a folder): Enter on it completes further instead of submitting. */
+  partial?: boolean;
 }
 
 export interface PromptOptions {
@@ -91,7 +93,13 @@ export function openPrompt(opts: PromptOptions, refocus: () => void) {
   };
   input.onblur = () => finish(false);
   input.onkeydown = (e) => {
-    if (e.key === "Enter") finish(true);
+    // As in Helix, Enter on a folder lists what is inside it; on anything
+    // else it submits.
+    if (e.key === "Enter" && items[selected]?.partial) {
+      completionBase = null;
+      selected = -1;
+      void refresh();
+    } else if (e.key === "Enter") finish(true);
     else if (e.key === "Escape" || (e.key === "c" && e.ctrlKey)) finish(false);
     else if (e.key === "Tab") {
       if (!items.length) return e.preventDefault();

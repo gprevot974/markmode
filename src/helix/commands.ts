@@ -241,6 +241,16 @@ function gotoPos(view: EditorView, pos: (r: Range, text: string, doc: Text) => n
 
 const lineStart = (doc: Text, line: number) => doc.line(Math.max(1, Math.min(doc.lines, line))).from;
 
+/**
+ * After jumping to the start of a line: scrolls so the whole line shows when
+ * it fits, not just its first row. With soft wrap a paragraph is one line, so
+ * `ge` would otherwise leave the end of the document below the window.
+ */
+function showWholeLine(view: EditorView) {
+  const line = view.state.doc.lineAt(view.state.selection.main.head);
+  view.dispatch({ effects: EditorView.scrollIntoView(EditorSelection.range(line.to, line.from), { y: "nearest" }) });
+}
+
 function pageMove(fraction: number): Command {
   return ({ view, count }) => {
     const ext = extending(view);
@@ -806,9 +816,14 @@ export const commands: Record<string, Command> = {
   goto_first_nonwhitespace: ({ view }) => gotoPos(view, (r, _t, doc) => firstNonWhitespace(doc, cursorOf(r, view))),
   goto_file_start: ({ view, count, hasCount }) =>
     gotoPos(view, (_r, _t, doc) => (hasCount ? lineStart(doc, count) : 0)),
-  goto_last_line: ({ view }) => gotoPos(view, (_r, _t, doc) => lineStart(doc, doc.lines)),
-  goto_line: ({ view, count, hasCount }) =>
-    gotoPos(view, (_r, _t, doc) => lineStart(doc, hasCount ? count : doc.lines)),
+  goto_last_line: ({ view }) => {
+    gotoPos(view, (_r, _t, doc) => lineStart(doc, doc.lines));
+    showWholeLine(view);
+  },
+  goto_line: ({ view, count, hasCount }) => {
+    gotoPos(view, (_r, _t, doc) => lineStart(doc, hasCount ? count : doc.lines));
+    showWholeLine(view);
+  },
   goto_window_top: windowPos("top"),
   goto_window_center: windowPos("center"),
   goto_window_bottom: windowPos("bottom"),

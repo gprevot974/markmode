@@ -57,6 +57,8 @@ export interface Backend {
   recoveryTake(): Promise<string[]>;
   /** ~/.config/helix/config.toml, parsed; null when there is none. */
   helixConfig(): Promise<Record<string, unknown> | null>;
+  /** Where config.toml is or would be; null without a Helix setup (the browser). */
+  helixConfigPath(): Promise<string | null>;
   /** A Helix theme file, parsed (its `inherits` not yet applied). */
   helixTheme(name: string): Promise<Record<string, unknown>>;
   helixThemes(): Promise<string[]>;
@@ -135,6 +137,7 @@ const tauriBackend: Backend = {
   recoveryRemove: (id) => invoke("recovery_remove", { id }),
   recoveryTake: () => invoke("recovery_take"),
   helixConfig: () => invoke("helix_config"),
+  helixConfigPath: () => invoke("helix_config_path"),
   helixTheme: (name) => invoke("helix_theme", { name }),
   helixThemes: () => invoke("helix_themes"),
 };
@@ -251,6 +254,7 @@ const browserBackend: Backend = {
     return found;
   },
   helixConfig: async () => null,
+  helixConfigPath: async () => null,
   async helixTheme(name) {
     throw new Error(`no Helix theme named ${name}`);
   },
