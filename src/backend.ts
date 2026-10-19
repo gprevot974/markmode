@@ -9,10 +9,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { message as messageDialog, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import sample from "../examples/sample.md?raw";
+import type { DiskFormat } from "./fileformat.ts";
 
 export interface Backend {
-  readText(path: string): Promise<string>;
-  writeText(path: string, contents: string): Promise<void>;
+  /** A text file and the encoding it was found in. */
+  readText(path: string): Promise<FileText>;
+  /** Writes atomically: a crash midway leaves the old file, never half of the new one. */
+  writeText(path: string, contents: string, format?: DiskFormat): Promise<void>;
   writeBytes(path: string, bytes: Uint8Array): Promise<void>;
   pickOpen(): Promise<string | null>;
   pickSave(defaultPath: string, ext: "md" | "docx"): Promise<string | null>;
@@ -47,6 +50,21 @@ export interface Backend {
   workspaceRoot(dir: string): Promise<string>;
   homeDir(): Promise<string>;
   currentDir(): Promise<string>;
+  /** Keeps a copy of a buffer with unsaved changes, for after a crash. */
+  recoveryWrite(id: number, contents: string): Promise<void>;
+  recoveryRemove(id: number): Promise<void>;
+  /** Copies left by an earlier run that did not exit cleanly. */
+  recoveryTake(): Promise<string[]>;
+  /** ~/.config/helix/config.toml, parsed; null when there is none. */
+  helixConfig(): Promise<Record<string, unknown> | null>;
+  /** A Helix theme file, parsed (its `inherits` not yet applied). */
+  helixTheme(name: string): Promise<Record<string, unknown>>;
+  helixThemes(): Promise<string[]>;
+}
+
+export interface FileText {
+  text: string;
+  format: DiskFormat;
 }
 
 export interface DirEntry {
@@ -61,7 +79,7 @@ const FILTERS = {
 
 const tauriBackend: Backend = {
   readText: (path) => invoke("read_text", { path }),
-  writeText: (path, contents) => invoke("write_text", { path, contents }),
+  writeText: (path, contents, format) => invoke("write_text", { path, contents, format }),
   writeBytes: (path, bytes) => invoke("write_bytes", { path, bytes: Array.from(bytes) }),
   async pickOpen() {
     const picked = await openDialog({ multiple: false, directory: false, filters: FILTERS.md });
@@ -113,23 +131,47 @@ const tauriBackend: Backend = {
   workspaceRoot: (dir) => invoke("workspace_root", { dir }),
   homeDir: () => invoke("home_dir"),
   currentDir: () => invoke("current_dir"),
+  recoveryWrite: (id, contents) => invoke("recovery_write", { id, contents }),
+  recoveryRemove: (id) => invoke("recovery_remove", { id }),
+  recoveryTake: () => invoke("recovery_take"),
+  helixConfig: () => invoke("helix_config"),
+  helixTheme: (name) => invoke("helix_theme", { name }),
+  helixThemes: () => invoke("helix_themes"),
 };
 
 // ── Browser stand-in ─────────────────────────────────────────────────────────
 
+const FILE = "md-editor.file.";
+const RECOVERY = "md-editor.recovery.";
+
+/** The tab's storage, which outlives reloading the page; null where it is blocked. */
+function tabStorage(): Storage | null {
+  try {
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+// Files written in this tab are kept in its storage too, so they are still
+// there after reloading the page, as they would be on disk after a restart.
 const memoryFiles = new Map<string, string>([
   ["/sample.md", sample],
   ["/notes/ideas.md", "# Ideas\n\n- A second file, for trying buffers and the file picker.\n"],
+  ...Object.entries(tabStorage() ?? {})
+    .filter(([k]) => k.startsWith(FILE))
+    .map(([k, v]): [string, string] => [k.slice(FILE.length), v]),
 ]);
 
 const browserBackend: Backend = {
   async readText(path) {
-    const s = memoryFiles.get(path);
-    if (s === undefined) throw new Error(`${path}: not found`);
-    return s;
+    const text = memoryFiles.get(path);
+    if (text === undefined) throw new Error(`${path}: not found`);
+    return { text, format: { encoding: "utf-8", bom: false } };
   },
   async writeText(path, contents) {
     memoryFiles.set(path, contents);
+    tabStorage()?.setItem(FILE + path, contents);
   },
   async writeBytes(path, bytes) {
     const a = document.createElement("a");
@@ -192,7 +234,29 @@ const browserBackend: Backend = {
   workspaceRoot: async () => "/",
   homeDir: async () => "",
   currentDir: async () => "/",
+  // Kept in the page's storage, so reloading the page plays the part of a
+  // restart after a crash.
+  async recoveryWrite(id, contents) {
+    tabStorage()?.setItem(RECOVERY + id, contents);
+  },
+  async recoveryRemove(id) {
+    tabStorage()?.removeItem(RECOVERY + id);
+  },
+  async recoveryTake() {
+    const storage = tabStorage();
+    if (!storage) return [];
+    const keys = Object.keys(storage).filter((k) => k.startsWith(RECOVERY));
+    const found = keys.map((k) => storage.getItem(k)!);
+    keys.forEach((k) => storage.removeItem(k));
+    return found;
+  },
+  helixConfig: async () => null,
+  async helixTheme(name) {
+    throw new Error(`no Helix theme named ${name}`);
+  },
+  helixThemes: async () => [],
 };
+
 
 export const isTauri = "__TAURI_INTERNALS__" in window;
 export const backend: Backend = isTauri ? tauriBackend : browserBackend;

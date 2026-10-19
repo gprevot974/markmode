@@ -7,14 +7,16 @@ working on, read it rendered, edit it the Helix way, and export a formatted
 `.docx` when it goes to other humans.
 
 - **Helix editing**: selection-first motions ported from helix-core, plus multiple
-  cursors, text objects, surround, jump labels, registers and counts. Bindings come
-  from your `~/.config/helix/config.toml` (`jk` to leave insert mode, Enter for
-  `goto_word`).
+  cursors, text objects, surround, jump labels, registers and counts. Your
+  `~/.config/helix/config.toml` applies: key remaps, theme and editor options
+  (see [Helix config](#helix-config)).
 - **Live preview**: markdown renders in place. Lines holding a selection show their
   raw source, so every character stays reachable.
 - **Collaboration-friendly**: when another program (an LLM, a script, git) changes
   the open file, it reloads in place, and `u` undoes the outside change. If you have
   unsaved edits, it warns instead of overwriting them.
+- **Safe with your files**: saves are atomic, encodings and line endings are
+  kept as found, and unsaved changes survive a crash (see [Files](#files)).
 - **Export**: `:export-docx` (or `space e`) writes `name.docx` next to `name.md`,
   styled by the same code as the old `build-docx.js`.
 
@@ -54,6 +56,8 @@ node scripts/build-docx.ts input.md [output.docx]
 | `:vs [path]`, `:sp [path]`, `:vnew`, `:hnew` | open in a vertical / horizontal split |
 | `:bc`, `:bco`, `:bca`, `:bn`, `:bp` | close buffer, others, all; next / previous buffer |
 | `:reload`, `:reload-all` | take the version on disk |
+| `:encoding [name]`, `:line-ending [lf\|crlf]` | show or change how the file is saved |
+| `:theme [name]` | show or change the theme |
 | `:export-docx [path]` | export to Word |
 | `:<n>` | go to line *n* |
 
@@ -69,9 +73,50 @@ Normal and select mode (`v`) follow Helix: `hjkl`, `w b e W B E`, `f t F T`, `A-
 
 ## Theme
 
-Kanagawa, as in your Helix config: wave when macOS is in dark mode, lotus when
-it is light. `:theme light`, `:theme dark` or `:theme auto` switches, and the
-choice is remembered; the default is `theme` in `src/config.ts`.
+The built-in theme is Kanagawa: wave when macOS is in dark mode, lotus when it
+is light. `:theme light`, `:theme dark` or `:theme auto` switches, and the
+choice is remembered.
+
+Any Helix theme works too: `:theme gruvbox`, with completion of every theme
+found in `~/.config/helix/themes` and in the Helix installation's runtime
+(Homebrew, Linux packages, a source checkout, or `$HELIX_RUNTIME`). Its UI
+colors and its `markup.*` scopes color the editor and the preview. The name
+`kanagawa` means the built-in theme, which has a light half that Helix's lacks.
+
+## Helix config
+
+At startup, `~/.config/helix/config.toml` is read (`$XDG_CONFIG_HOME/helix`
+if set) and applied over the defaults in `src/config.ts`:
+
+- `theme`, including `theme = { light = "...", dark = "..." }`, which follows
+  the macOS appearance. A theme picked with `:theme` wins over it.
+- `[editor]`: `cursorline`, `soft-wrap.enable`, `auto-save` (focus lost), and
+  whether `gutters` has line numbers.
+- `[keys.normal]` and `[keys.insert]`. A binding that uses a command this
+  editor lacks is skipped whole (a sequence run halfway would do something
+  else), and a message lists the skipped ones the first time, and again when
+  the list changes. `[keys.select]` is ignored: select mode shares the normal
+  mode bindings.
+
+Set `readHelixConfig: false` in `src/config.ts` to ignore it.
+
+## Files
+
+- **Atomic saves.** A save writes a temporary file next to the original and
+  renames it over it, so a crash or a full disk never leaves half a file.
+  Symbolic links stay links (the file they point to is replaced) and
+  permissions are kept.
+- **Encodings and line endings.** UTF-8 (with or without BOM), UTF-16 with a
+  BOM, and anything else as Windows-1252 are read and written back the same
+  way; files containing NUL bytes are refused as binary. `\r\n` files keep
+  `\r\n`; a file mixing both gets the more common one. The statusline shows
+  the encoding and line endings when they are not UTF-8 and `\n`.
+  `:encoding` and `:line-ending` change them.
+- **Crash recovery.** A second after you stop typing, each buffer with unsaved
+  changes is copied to `~/Library/Application Support/dev.gprevot.md-editor/recovery/`.
+  The copies go away on saving and on a clean exit. After a crash, the next
+  start reopens them as modified buffers over the file as it is on disk: `:w`
+  keeps the changes, `:reload` drops them, and `u` shows what they changed.
 
 ## Spelling
 
@@ -109,7 +154,7 @@ preview their result as you type, and Esc restores the selection.
 Insert mode keeps CodeMirror's editing (with the macOS Emacs keys) and adds
 `C-w`, `C-u` and `jk`. Pressing Enter in a list continues it.
 
-Change bindings in `src/config.ts`. It uses config.toml's shape and Helix's
+Change bindings in your Helix config.toml, or in `src/config.ts`. It uses config.toml's shape and Helix's
 command names; see `src/helix/keymap.ts` for the defaults and `src/helix/commands.ts`
 for every command.
 
@@ -135,15 +180,27 @@ style.
 src/helix/        modal editing: state, motions, text objects, commands, keymap, dispatcher
 src/preview/      live preview decorations and table rendering
 src/export/       markdown → docx
-src/theme/        Kanagawa
+src/theme/        Kanagawa, Helix themes, light and dark
+src/helixConfig.ts  reading ~/.config/helix/config.toml
+src/fileformat.ts line endings and encodings
 src/backend.ts    files, dialogs, clipboard (Tauri, or an in-memory stand-in in a browser)
-src-tauri/        the Rust shell: file I/O and the file watcher
+src-tauri/        the Rust shell: file I/O, the file watcher, crash recovery, spelling
+tests/            unit tests (vitest), and tests/e2e: the editor in Chrome
+docs/             the roadmap
 ```
 
 ## Tests
 
 ```bash
-npm test
+npm test                          # unit tests, then the browser tests
+npm run test:e2e -- spelling      # browser suites whose name matches
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Covers the ported Helix motions and text objects, and checks the docx output.
+The unit tests cover the ported Helix motions and text objects, the docx
+output, line endings, Helix themes and config. The browser tests run the
+editor in Chrome against the in-memory backend with real key presses: live
+preview, windows, buffers, pickers, spelling, themes, line endings, crash
+recovery (a page reload stands in for a restart), and a 120,000-line file,
+with timings. They use the installed Chrome, or `CHROME_PATH`. The Rust tests
+cover encodings and atomic writes. CI runs all three on macOS.

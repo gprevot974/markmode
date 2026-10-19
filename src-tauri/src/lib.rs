@@ -3,6 +3,10 @@
 //! file changes on disk (an LLM or another editor writing to it). All editing
 //! logic lives in the front end.
 
+mod files;
+mod helix;
+mod recovery;
+
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -28,19 +32,30 @@ struct AppState {
     watched_dirs: Mutex<HashSet<PathBuf>>,
 }
 
-#[tauri::command]
-fn read_text(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))
+#[derive(serde::Serialize)]
+struct FileText {
+    text: String,
+    format: files::Format,
 }
 
+/// A text file and the encoding it was found in.
 #[tauri::command]
-fn write_text(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| format!("{path}: {e}"))
+fn read_text(path: String) -> Result<FileText, String> {
+    let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
+    let (text, format) = files::decode(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    Ok(FileText { text, format })
+}
+
+/// Writes text in the given encoding (UTF-8 when none is given), atomically.
+#[tauri::command]
+fn write_text(path: String, contents: String, format: Option<files::Format>) -> Result<(), String> {
+    let bytes = files::encode(&contents, format.unwrap_or(files::UTF8)).map_err(|e| format!("{path}: {e}"))?;
+    files::write_atomic(Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))
 }
 
 #[tauri::command]
 fn write_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
-    std::fs::write(&path, bytes).map_err(|e| format!("{path}: {e}"))
+    files::write_atomic(Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))
 }
 
 #[derive(serde::Serialize)]
@@ -249,7 +264,8 @@ mod spell {
 
 /// Quits without asking: the front end has already dealt with unsaved buffers.
 #[tauri::command]
-fn exit_app(app: AppHandle) {
+fn exit_app(app: AppHandle, recovery: State<recovery::Recovery>) {
+    recovery::clear(&recovery);
     app.exit(0);
 }
 
@@ -265,6 +281,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState::default())
+        .manage(recovery::Recovery::default())
         .setup(|app| {
             if let Some(arg) = std::env::args().skip(1).find(|a| !a.starts_with('-')) {
                 *app.state::<AppState>().pending_open.lock().unwrap() = Some(absolute(&arg));
@@ -306,7 +323,13 @@ pub fn run() {
             exit_app,
             spell::check_spelling,
             spell::spelling_suggestions,
-            spell::learn_word
+            spell::learn_word,
+            recovery::recovery_write,
+            recovery::recovery_remove,
+            recovery::recovery_take,
+            helix::helix_config,
+            helix::helix_theme,
+            helix::helix_themes
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

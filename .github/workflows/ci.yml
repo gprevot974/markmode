@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # macOS: the spell checker and the window code are macOS-specific, and the
+    # runner comes with Chrome for the browser tests.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # Type checks, and builds the front end the Rust crate embeds.
+      - run: npm run build
+      - run: npm run test:unit
+      - run: npm run test:e2e
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

@@ -3,7 +3,7 @@
 // so every character stays reachable by Helix motions.
 
 import { type EditorState, type Range as DecoRange, RangeSet, StateField } from "@codemirror/state";
-import { syntaxTree, ensureSyntaxTree } from "@codemirror/language";
+import { syntaxTree } from "@codemirror/language";
 import {
   Decoration,
   type DecorationSet,
@@ -207,13 +207,18 @@ class TableWidget extends WidgetType {
   }
 }
 
+// Blocks that can hold other blocks. The fields below look only at blocks,
+// never inside paragraphs, and do not wait for the parser to reach the end of
+// the document: on a large file either would cost tens of milliseconds a key
+// press. The parts parsed later come in with the next syntax tree.
+const CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem", "Blockquote"]);
+
 function buildTables(state: EditorState): DecorationSet {
-  const tree = ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state);
   const active = activeLines(state);
   const decos: DecoRange<Decoration>[] = [];
-  tree.iterate({
+  syntaxTree(state).iterate({
     enter(node) {
-      if (node.name !== "Table") return;
+      if (node.name !== "Table") return CONTAINERS.has(node.name) ? undefined : false;
       const first = state.doc.lineAt(node.from);
       const last = state.doc.lineAt(node.to);
       for (let n = first.number; n <= last.number; n++) if (active.has(n)) return false;
@@ -260,7 +265,6 @@ const lineClass = (cls: string) => {
 };
 
 function buildGutterClasses(state: EditorState): RangeSet<GutterMarker> {
-  const tree = ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state);
   const marks: DecoRange<GutterMarker>[] = [];
   const eachLine = (from: number, to: number, cls: string) => {
     for (let pos = from; pos <= to; ) {
@@ -269,14 +273,13 @@ function buildGutterClasses(state: EditorState): RangeSet<GutterMarker> {
       pos = line.to + 1;
     }
   };
-  tree.iterate({
+  syntaxTree(state).iterate({
     enter(node) {
       const heading = /^(?:ATX|Setext)Heading(\d)$/.exec(node.name);
       if (heading) eachLine(node.from, node.to, `gutter-h${heading[1]}`);
       else if (node.name === "FencedCode" || node.name === "CodeBlock") eachLine(node.from, node.to, "gutter-code");
       else if (node.name === "HorizontalRule") eachLine(node.from, node.from, "gutter-hr");
-      else return;
-      return false;
+      else return CONTAINERS.has(node.name) ? undefined : false;
     },
   });
   return RangeSet.of(marks, true);

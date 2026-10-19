@@ -6,7 +6,7 @@ export interface Typable {
   aliases: string[];
   doc: string;
   /** What the argument completes to. */
-  args?: "path" | "theme";
+  args?: "path" | "theme" | "encoding" | "line-ending";
 }
 
 export const typables: Typable[] = [
@@ -30,7 +30,9 @@ export const typables: Typable[] = [
   { name: "reload", aliases: ["rl"], doc: "Discard changes and reload from the file on disk" },
   { name: "reload-all", aliases: ["rla"], doc: "Discard changes and reload all buffers from disk" },
   { name: "export-docx", aliases: ["docx", "export"], doc: "Export a styled .docx next to the file, or to the given path", args: "path" },
-  { name: "theme", aliases: [], doc: "Switch between light and dark: auto (follow macOS), light or dark. Without an argument, shows the current one", args: "theme" },
+  { name: "encoding", aliases: [], doc: "Set the encoding the file is saved in (utf-8, utf-16le, utf-16be, windows-1252). Without an argument, shows it", args: "encoding" },
+  { name: "line-ending", aliases: [], doc: "Set the line endings the file is saved with: lf or crlf. Without an argument, shows them", args: "line-ending" },
+  { name: "theme", aliases: [], doc: "Change the theme: auto (Kanagawa, following macOS), light, dark, or any Helix theme by name. Without an argument, shows the current one", args: "theme" },
   { name: "goto", aliases: ["g"], doc: "Goto line number" },
   { name: "help", aliases: ["h"], doc: "List the typable commands" },
 ];

@@ -16,12 +16,25 @@ import { commands, type Host, type WindowCommand } from "./helix/commands.ts";
 import { livePreview } from "./preview/livePreview.ts";
 import { spellcheck } from "./spell.ts";
 import { kanagawa } from "./theme/kanagawa.ts";
-import { currentTheme, initTheme, setTheme, themeSettings, type ThemeSetting } from "./theme/appearance.ts";
+import { currentTheme, initTheme, setTheme, themeNames } from "./theme/appearance.ts";
+import { applyHelixConfig } from "./helixConfig.ts";
 import { openPrompt, type Completion, type PromptOptions } from "./ui/prompt.ts";
 import { openPicker, type OpenHow } from "./ui/picker.ts";
 import { renderInfobox } from "./ui/infobox.ts";
 import { Layout, type Split, type SplitDir, type Tile } from "./ui/layout.ts";
 import { findTypable, matchTypables, typables } from "./typable.ts";
+import {
+  defaultFormat,
+  describeFormat,
+  encodings,
+  fromDisk,
+  lineEndings,
+  sameFormat,
+  toDisk,
+  type Encoding,
+  type FileFormat,
+  type LineEnding,
+} from "./fileformat.ts";
 
 const $ = (id: string) => document.getElementById(id)!;
 const basename = (p: string) => p.split("/").pop() ?? p;
@@ -36,6 +49,17 @@ function diffChange(a: string, b: string) {
   return { from: start, to: a.length - end, insert: b.slice(start, b.length - end) };
 }
 
+/** How long after the last edit the crash-recovery copies are written. */
+const RECOVERY_DELAY = 1000;
+
+/** What a crash-recovery copy holds. */
+interface RecoveryCopy {
+  path: string | null;
+  text: string;
+  format: FileFormat;
+  time: number;
+}
+
 /** Marks an edit replayed from another window showing the same document. */
 const synced = Annotation.define<boolean>();
 
@@ -47,15 +71,19 @@ class Doc {
   /** The editor state while no window shows the document; windows hold the live one. */
   state: EditorState;
   savedDoc: Text;
+  /** Encoding and line endings, kept from the file; changed with :encoding and :line-ending. */
+  format: FileFormat;
+  savedFormat: FileFormat;
   /** The file changed on disk while there were unsaved edits here. */
   diskConflict = false;
   lastAccess = 0;
   reloadTimer: number | undefined;
 
-  constructor(path: string | null, state: EditorState) {
+  constructor(path: string | null, state: EditorState, format: FileFormat) {
     this.path = path;
     this.state = state;
     this.savedDoc = state.doc;
+    this.format = this.savedFormat = format;
   }
 }
 
@@ -65,7 +93,7 @@ class Win implements Tile {
   parent: Split | null = null;
   doc: Doc;
   readonly view: EditorView;
-  readonly sl: Record<"mode" | "file" | "sels" | "pos", HTMLElement>;
+  readonly sl: Record<"mode" | "file" | "sels" | "format" | "pos", HTMLElement>;
 
   constructor(doc: Doc, state: EditorState, onTransactions: (win: Win, trs: readonly Transaction[]) => void) {
     this.doc = doc;
@@ -80,7 +108,13 @@ class Win implements Tile {
       status.appendChild(el);
       return el;
     };
-    this.sl = { mode: span("sl-mode"), file: span("sl-file"), sels: span("sl-sels"), pos: span("sl-pos") };
+    this.sl = {
+      mode: span("sl-mode"),
+      file: span("sl-file"),
+      sels: span("sl-sels"),
+      format: span("sl-format"),
+      pos: span("sl-pos"),
+    };
     this.sl.file.after(Object.assign(document.createElement("span"), { className: "sl-spacer" }));
     this.el.append(editor, status);
     this.view = new EditorView({
@@ -179,8 +213,8 @@ class App implements Host {
 
   // ── Documents ──────────────────────────────────────────────────────────────
 
-  private addDoc(path: string | null, text: string): Doc {
-    const doc = new Doc(path, this.createState(text));
+  private addDoc(path: string | null, text: string, format = defaultFormat): Doc {
+    const doc = new Doc(path, this.createState(text), format);
     this.docs.push(doc);
     if (path) this.watch(path);
     return doc;
@@ -188,6 +222,7 @@ class App implements Host {
 
   private removeDoc(doc: Doc) {
     this.docs.splice(this.docs.indexOf(doc), 1);
+    if (this.recovered.delete(doc)) void backend.recoveryRemove(doc.id).catch(() => {});
     if (doc.path) void backend.unwatch(doc.path);
   }
 
@@ -205,7 +240,7 @@ class App implements Host {
   }
 
   isDirty(doc: Doc): boolean {
-    return !this.stateOf(doc).doc.eq(doc.savedDoc);
+    return !this.stateOf(doc).doc.eq(doc.savedDoc) || !sameFormat(doc.format, doc.savedFormat);
   }
 
   private docName(doc: Doc, full = false): string {
@@ -237,24 +272,29 @@ class App implements Host {
   async openPath(path: string, how: OpenHow = "replace") {
     let doc = this.docs.find((d) => d.path === path);
     if (!doc) {
-      let text = "";
+      let file = { text: "", format: defaultFormat };
       try {
-        text = await backend.readText(path);
+        const disk = await backend.readText(path);
+        file = fromDisk(disk.text, disk.format);
       } catch (err) {
         // A path that does not exist yet becomes a new file on the first write.
         if (!/os error 2|not found/i.test(String(err))) throw err;
         this.message(`new file ${basename(path)}`);
       }
-      doc = this.addDoc(path, text);
+      doc = this.addDoc(path, file.text, file.format);
     }
     const win = how === "replace" ? this.active : this.split(how === "vsplit" ? "row" : "column");
+    this.replace(win, doc);
+    this.focus(win);
+  }
+
+  /** Shows a document; an empty, untouched scratch buffer it replaces goes away, as in Helix. */
+  replace(win: Win, doc: Doc) {
     const previous = win.doc;
     this.show(win, doc);
-    // An empty, untouched scratch buffer that a file replaces goes away, as in Helix.
     if (!previous.path && !this.stateOf(previous).doc.length && !this.windowsShowing(previous).length) {
       this.removeDoc(previous);
     }
-    this.focus(win);
   }
 
   async openFile() {
@@ -324,6 +364,7 @@ class App implements Host {
 
   /** Replays edits into the other windows showing the same document. */
   private afterTransactions(win: Win, trs: readonly Transaction[]) {
+    if (trs.some((tr) => tr.docChanged)) this.scheduleRecovery();
     for (const tr of trs) {
       if (!tr.docChanged || tr.annotation(synced)) continue;
       for (const other of this.windowsShowing(win.doc)) {
@@ -435,6 +476,7 @@ class App implements Host {
     win.sl.mode.textContent = { normal: "NOR", insert: "INS", select: "SEL" }[mode];
     win.sl.file.textContent = this.docName(win.doc, true);
     win.sl.file.classList.toggle("dirty", this.isDirty(win.doc));
+    win.sl.format.textContent = describeFormat(win.doc.format);
     const sel = state.selection;
     win.sl.sels.textContent = sel.ranges.length > 1 ? `${sel.mainIndex + 1}/${sel.ranges.length} sels` : "";
     const main = sel.main;
@@ -486,11 +528,11 @@ class App implements Host {
     }
     const typable = findTypable(line.slice(0, space).replace(/!$/, ""));
     const arg = line.slice(space + 1);
-    if (typable?.args === "theme") {
-      return themeSettings
-        .filter((t) => t.startsWith(arg))
-        .map((t) => ({ insert: t, from: space + 1, label: t }));
-    }
+    const choices = (names: string[]) =>
+      names.filter((n) => n.startsWith(arg)).map((n) => ({ insert: n, from: space + 1, label: n }));
+    if (typable?.args === "theme") return choices(await themeNames());
+    if (typable?.args === "encoding") return choices(encodings);
+    if (typable?.args === "line-ending") return choices(lineEndings);
     if (typable?.args !== "path") return [];
     const slash = arg.lastIndexOf("/");
     const dirPart = arg.slice(0, slash + 1);
@@ -526,7 +568,7 @@ class App implements Host {
         text: (rel) => rel,
         async preview(rel) {
           try {
-            return { text: await backend.readText(join(rel)) };
+            return { text: (await backend.readText(join(rel))).text };
           } catch (err) {
             return { text: String(err) };
           }
@@ -621,10 +663,20 @@ class App implements Host {
           return;
         case "export-docx":
           return await this.exportDocx(arg);
+        case "encoding":
+          if (!arg) return this.message(`encoding: ${doc.format.encoding}${doc.format.bom ? " with BOM" : ""}`);
+          if (!encodings.includes(arg as Encoding)) return this.message(`encoding: ${encodings.join(", ")}`, "error");
+          // UTF-16 cannot be told apart from other bytes without its BOM.
+          doc.format = { ...doc.format, encoding: arg as Encoding, bom: arg.startsWith("utf-16") || (arg === "utf-8" && doc.format.bom) };
+          return this.renderAllStatus();
+        case "line-ending":
+          if (!arg) return this.message(`line ending: ${doc.format.lineEnding}`);
+          if (!lineEndings.includes(arg as LineEnding)) return this.message("line-ending: lf or crlf", "error");
+          doc.format = { ...doc.format, lineEnding: arg as LineEnding };
+          return this.renderAllStatus();
         case "theme":
           if (!arg) return this.message(`theme: ${currentTheme()}`);
-          if (!themeSettings.includes(arg as ThemeSetting)) return this.message("theme: auto, light or dark", "error");
-          return setTheme(arg as ThemeSetting);
+          return await setTheme(arg);
         case "goto":
           return this.gotoLine(Number(arg));
         case "help":
@@ -673,20 +725,94 @@ class App implements Host {
     this.view.focus();
   }
 
+  // ── Crash recovery ─────────────────────────────────────────────────────────
+
+  /** Buffers with a recovery copy on disk, and the text that copy holds. */
+  private recovered = new Map<Doc, Text>();
+  private recoveryTimer: number | undefined;
+
+  /** Brings the recovery copies up to date once typing pauses. */
+  private scheduleRecovery() {
+    clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = window.setTimeout(() => void this.syncRecovery(), RECOVERY_DELAY);
+  }
+
+  private async syncRecovery() {
+    for (const doc of this.docs) {
+      const text = this.stateOf(doc).doc;
+      if (this.isDirty(doc)) {
+        if (this.recovered.get(doc) === text) continue;
+        this.recovered.set(doc, text);
+        const copy: RecoveryCopy = { path: doc.path, text: text.toString(), format: doc.format, time: Date.now() };
+        await backend.recoveryWrite(doc.id, JSON.stringify(copy)).catch((e) => {
+          this.recovered.delete(doc);
+          this.message(`could not keep a recovery copy of ${this.docName(doc)}: ${e}`, "error");
+        });
+      } else if (this.recovered.delete(doc)) {
+        await backend.recoveryRemove(doc.id).catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Reopens the unsaved changes an earlier run left behind when it crashed:
+   * each comes back as a modified buffer over the file as it is on disk, so
+   * `:w` keeps the changes, `:reload` drops them and `u` shows what they were.
+   */
+  async restoreRecovered(): Promise<Doc | null> {
+    const copies: RecoveryCopy[] = [];
+    for (const raw of await backend.recoveryTake().catch(() => [])) {
+      try {
+        copies.push(JSON.parse(raw));
+      } catch {
+        // Unreadable: nothing to restore from it.
+      }
+    }
+    const restored: Doc[] = [];
+    for (const copy of copies.sort((a, b) => a.time - b.time)) {
+      let doc = copy.path ? this.docs.find((d) => d.path === copy.path) : undefined;
+      if (!doc) {
+        let disk = { text: "", format: copy.format };
+        if (copy.path) {
+          try {
+            const file = await backend.readText(copy.path);
+            disk = fromDisk(file.text, file.format);
+          } catch {
+            // Deleted since: the copy becomes a new file there.
+          }
+        }
+        if (disk.text === copy.text && sameFormat(disk.format, copy.format)) continue;
+        doc = this.addDoc(copy.path, disk.text, disk.format);
+      }
+      const current = this.stateOf(doc).doc.toString();
+      doc.state = doc.state.update({ changes: diffChange(current, copy.text), userEvent: "recover" }).state;
+      doc.format = copy.format;
+      restored.push(doc);
+    }
+    if (!restored.length) return null;
+    await this.syncRecovery();
+    const names = restored.map((d) => this.docName(d)).join(", ");
+    this.message(`restored unsaved changes from before a crash: ${names} (:w keeps them, :reload drops them)`);
+    return restored[restored.length - 1];
+  }
+
   // ── Files ──────────────────────────────────────────────────────────────────
 
   async save(doc: Doc, path?: string): Promise<boolean> {
     const target = path ? this.resolve(path) : (doc.path ?? (await backend.pickSave("untitled.md", "md")));
     if (!target) return false;
     const text = this.stateOf(doc).doc;
-    await backend.writeText(target, text.toString());
+    const format = doc.format;
+    await backend.writeText(target, toDisk(text.toString(), format), format);
     if (target !== doc.path) {
       if (doc.path) void backend.unwatch(doc.path);
       doc.path = target;
       this.watch(target);
     }
     doc.savedDoc = text;
+    doc.savedFormat = format;
     doc.diskConflict = false;
+    this.scheduleRecovery();
     this.renderAllStatus();
     this.message(`written ${basename(target)} (${text.lines} lines)`);
     return true;
@@ -706,14 +832,15 @@ class App implements Host {
 
   async reload(doc: Doc) {
     if (!doc.path) return this.message("no file to reload", "error");
-    const text = await backend.readText(doc.path);
-    this.applyDiskText(doc, text);
+    const disk = await backend.readText(doc.path);
+    const { text, format } = fromDisk(disk.text, disk.format);
+    this.applyDiskText(doc, text, format);
     this.message(`reloaded ${basename(doc.path)}`);
   }
 
   // Applied as an edit rather than a fresh document, so selections stay put
   // and `u` can undo what the other program wrote.
-  private applyDiskText(doc: Doc, text: string) {
+  private applyDiskText(doc: Doc, text: string, format: FileFormat) {
     const current = this.stateOf(doc).doc.toString();
     if (text !== current) {
       const spec = { changes: diffChange(current, text), annotations: isolateHistory.of("full"), userEvent: "reload" };
@@ -722,22 +849,27 @@ class App implements Host {
       else doc.state = doc.state.update(spec).state;
     }
     doc.savedDoc = this.stateOf(doc).doc;
+    doc.format = doc.savedFormat = format;
     doc.diskConflict = false;
+    this.scheduleRecovery();
     this.renderAllStatus();
   }
 
   private async onDiskChange(doc: Doc) {
     if (!doc.path || !this.docs.includes(doc)) return;
     let text: string;
+    let format: FileFormat;
     try {
-      text = await backend.readText(doc.path);
+      const disk = await backend.readText(doc.path);
+      ({ text, format } = fromDisk(disk.text, disk.format));
     } catch {
       return; // Mid-rename or deleted; a later event will tell.
     }
     const dirty = this.isDirty(doc);
     if (text === this.stateOf(doc).doc.toString()) {
-      // Our own save, or someone wrote what we already have.
-      if (dirty) this.applyDiskText(doc, text);
+      // Our own save, someone wrote what we already have, or another program
+      // changed only the encoding or line endings (taken unless we changed them too).
+      if (!dirty || sameFormat(format, doc.format)) this.applyDiskText(doc, text, format);
       return;
     }
     const name = basename(doc.path);
@@ -746,7 +878,7 @@ class App implements Host {
       this.message(`${name} changed on disk: :reload to take it, :w to overwrite it`, "error");
       return;
     }
-    this.applyDiskText(doc, text);
+    this.applyDiskText(doc, text, format);
     this.message(`${name} changed on disk, reloaded (u to undo)`);
   }
 
@@ -788,12 +920,41 @@ class App implements Host {
   }
 }
 
-initTheme(config.theme);
+// The Helix config comes first: the theme and the keymaps depend on it.
+const startupErrors: string[] = [];
+let skippedKeys: string[] = [];
+if (config.readHelixConfig) {
+  try {
+    const toml = await backend.helixConfig();
+    if (toml) skippedKeys = applyHelixConfig(toml);
+  } catch (err) {
+    startupErrors.push(`Helix config: ${err}`);
+  }
+}
+const themeError = await initTheme(config.theme);
+if (themeError) startupErrors.push(themeError);
 const app = new App();
 await app.init();
+const recovered = await app.restoreRecovered();
 const initial = await backend.initialFile().catch(() => null);
 if (initial) await app.openPath(initial).catch((e) => app.message(String(e), "error"));
-else app.view.focus();
+else if (recovered) app.replace(app.active, recovered);
+app.view.focus();
+if (startupErrors.length) app.message(startupErrors.join("; "), "error");
+else reportSkippedKeys(skippedKeys);
 
-// Exposed for debugging from the devtools console.
-Object.assign(window, { app, commands });
+/** Says once which Helix bindings were left out, and again only when that changes. */
+function reportSkippedKeys(skipped: string[]) {
+  const KEY = "md-editor.skipped-keys";
+  const list = skipped.join("; ");
+  try {
+    if (localStorage.getItem(KEY) === list) return;
+    localStorage.setItem(KEY, list);
+  } catch {
+    // Said every time, then.
+  }
+  if (list) app.message(`Helix config: skipped bindings using commands this editor lacks (${list})`);
+}
+
+// Exposed for debugging from the devtools console, and for the browser tests.
+Object.assign(window, { app, commands, backend });

@@ -37,6 +37,19 @@
   --mono-font: "JetBrains Mono", "SF Mono", "Menlo", monospace;
   --measure: 46rem;
   --text-size: 18px;
+
+  /* What the preview is colored with. A Helix theme sets these from its
+     markup scopes; the built-in theme takes them from its palette. */
+  --h1: var(--blue);
+  --h2: var(--spring-blue);
+  --h3: var(--aqua);
+  --h4: var(--spring-violet);
+  --strong: var(--yellow);
+  --em: var(--pink);
+  --code: var(--green);
+  --link: var(--spring-blue);
+  --list: var(--orange);
+  --quote: var(--spring-violet);
 }
 
 :root[data-theme="light"] {
@@ -247,7 +260,7 @@ body {
 .md-h {
   font-family: var(--ui-font);
   font-weight: 700;
-  color: var(--blue);
+  color: var(--h1);
   line-height: 1.3;
 }
 .md-h1 {
@@ -258,27 +271,27 @@ body {
 .md-h2 {
   font-size: 1.45em;
   padding-top: 0.7em !important;
-  color: var(--spring-blue);
+  color: var(--h2);
 }
 .md-h3 {
   font-size: 1.2em;
   padding-top: 0.5em !important;
-  color: var(--aqua);
+  color: var(--h3);
 }
 .md-h4,
 .md-h5,
 .md-h6 {
   font-size: 1.05em;
-  color: var(--spring-violet);
+  color: var(--h4);
 }
 
 .md-strong {
   font-weight: 700;
-  color: var(--yellow);
+  color: var(--strong);
 }
 .md-em {
   font-style: italic;
-  color: var(--pink);
+  color: var(--em);
 }
 .md-strike {
   text-decoration: line-through;
@@ -287,15 +300,15 @@ body {
 .md-code {
   font-family: var(--mono-font);
   font-size: 0.85em;
-  color: var(--green);
+  color: var(--code);
   background: var(--bg-dim);
   border-radius: 3px;
   padding: 0.05em 0.25em;
 }
 .md-link {
-  color: var(--spring-blue);
+  color: var(--link);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--spring-blue) 40%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
   text-underline-offset: 3px;
 }
 .md-url {
@@ -308,14 +321,14 @@ body {
 }
 .md-bullet,
 .md-listmark {
-  color: var(--orange);
+  color: var(--list);
 }
 .md-bullet {
   display: inline-block;
   width: 0.6em;
 }
 .md-task {
-  color: var(--orange);
+  color: var(--list);
 }
 .md-task-done {
   color: var(--autumn-green);
@@ -323,7 +336,7 @@ body {
 .md-quote {
   border-left: 3px solid var(--violet);
   padding-left: 1rem !important;
-  color: var(--spring-violet);
+  color: var(--quote);
   font-style: italic;
 }
 .md-codeblock {
@@ -384,20 +397,20 @@ body {
 }
 .md-table th {
   background: var(--bg-line);
-  color: var(--blue);
+  color: var(--h1);
 }
 .md-table tr:nth-child(even) td {
   background: color-mix(in srgb, var(--bg-line) 45%, transparent);
 }
 .md-table strong {
-  color: var(--yellow);
+  color: var(--strong);
 }
 .md-table code {
   font-family: var(--mono-font);
-  color: var(--green);
+  color: var(--code);
 }
 .md-table a {
-  color: var(--spring-blue);
+  color: var(--link);
 }
 
 /* ── Statuslines, prompt and messages ────────────────────────────────────── */

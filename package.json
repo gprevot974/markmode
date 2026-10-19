@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "vitest run",
+    "test": "vitest run && node tests/e2e/run.ts",
     "tauri": "tauri",
-    "docx": "node scripts/build-docx.ts"
+    "docx": "node scripts/build-docx.ts",
+    "test:unit": "vitest run",
+    "test:e2e": "node tests/e2e/run.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
@@ -30,6 +32,7 @@
     "@tauri-apps/cli": "^2.12.3",
     "@types/node": "^26.6.5",
     "jszip": "^3.10.2",
+    "playwright-core": "^1.64.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
