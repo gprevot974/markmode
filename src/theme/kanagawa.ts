@@ -30,7 +30,7 @@ const editorTheme = EditorView.theme(
       border: "none",
       color: "var(--gutter)",
       fontFamily: "var(--mono-font)",
-      fontSize: "13px",
+      fontSize: "calc(13px * var(--zoom, 1))",
     },
     ".cm-gutters ~ .cm-content": { marginLeft: "0" },
     ".cm-lineNumbers .cm-gutterElement": {

@@ -12,9 +12,11 @@ working on, read it rendered, edit it the Helix way, and export a formatted
   (see [Helix config](#helix-config)).
 - **Live preview**: markdown renders in place. Lines holding a selection show their
   raw source, so every character stays reachable.
-- **Collaboration-friendly**: when another program (an LLM, a script, git) changes
-  the open file, it reloads in place, and `u` undoes the outside change. If you have
-  unsaved edits, it warns instead of overwriting them.
+- **Made for working with agents**: when another program (an LLM agent, a script,
+  git) changes the open file, its changes show inline, to accept or reject one by
+  one (see [Reviewing outside changes](#reviewing-outside-changes)). Comments
+  live in the file, where the agent reads them (see [Comments](#comments)), and
+  every version is kept (see [Version history](#version-history)).
 - **Safe with your files**: saves are atomic, encodings and line endings are
   kept as found, and unsaved changes survive a crash (see [Files](#files)).
 - **Export**: `:export-docx` (or `space e`) writes `name.docx` next to `name.md`,
@@ -57,12 +59,18 @@ node scripts/build-docx.ts input.md [output.docx]
 | `:bc`, `:bco`, `:bca`, `:bn`, `:bp` | close buffer, others, all; next / previous buffer |
 | `:reload`, `:reload-all` | take the version on disk |
 | `:encoding [name]`, `:line-ending [lf\|crlf]` | show or change how the file is saved |
+| `:accept-all-changes`, `:reject-all-changes`, `:reset-diff-change` | decide on outside changes under review |
+| `:history` | earlier versions of the file (`space h`) |
 | `:theme [name]` | show or change the theme |
+| `:zoom [in\|out\|reset\|percent]` | text size |
+| `:reflow [width]` | hard-wrap the selected lines, or the paragraph at the cursor, to `text-width` (80) |
 | `:config-open` | open your Helix config.toml |
 | `:export-docx [path]` | export to Word |
 | `:<n>` | go to line *n* |
 
-macOS shortcuts also work: ⌘S save, ⌘O open, ⌘⇧E export.
+macOS shortcuts also work: ⌘S save, ⌘O open, ⌘⇧E export, ⌘= and ⌘- zoom in and
+out, ⌘0 back to 100%. The zoom sizes the text and its column, not the
+statusline, and is kept for the next start.
 
 ## Key bindings
 
@@ -70,7 +78,73 @@ Normal and select mode (`v`) follow Helix: `hjkl`, `w b e W B E`, `f t F T`, `A-
 `gg ge gh gl gs gt gc gb gw`, `x X`, `%`, `s S A-s`, `; A-; , A-,`, `C A-C`, `( )`,
 `_`, `/ ? n N *`, `y p P R`, `d c A-d A-c`, `r ~ \` A-\``, `> <`, `J`, `u U`,
 `mi ma mm ms mr md`, `zz zt zb zj zk`, `C-u C-d C-b C-f`, `[space ]space`,
-`space y/p/P/R/e`. Counts work (`3w`, `5j`, `12G`).
+`space y/p/P/R/e`, `]g [g ]G [G` (changes under review). Counts work (`3w`,
+`5j`, `12G`). Additions for this editor: `space d` (deciding on changes),
+`space c`, `space C`, `]c`, `[c` (comments) and `space h` (version history).
+
+## Reviewing outside changes
+
+When another program changes an open file that has no unsaved edits here, the
+new text comes in and each change shows inline: added text is highlighted, the
+text it replaced shows dimmed above it with the removed words struck out, and
+a bar in the gutter marks each one. A paragraph with only a few words changed
+shows them in place.
+Then, as with Helix's diff gutter:
+
+- `]g` / `[g` go to the next / previous change and select it, `]G` / `[G` to
+  the last / first; the message line says "change 2 of 5".
+- `space d a` accepts the changes under the selections (they stay and lose
+  their highlight), `space d r` rejects them (the text from before comes back),
+  `space d A` / `space d R` decide on all of them. The Accept and Reject buttons
+  in the margin beside each change do the same, and so do `:accept-all-changes`,
+  `:reject-all-changes` and Helix's `:reset-diff-change` (`:diffget`).
+- `u` undoes the whole outside change at once.
+
+What you type during a review is taken as it is: it does not show as a change.
+A rejection changes the buffer, so `:w` writes it back for the agent to see. If
+the other program writes again before the review is done (and the buffer has
+no unsaved edits), its new changes join the review, still compared with the
+text from before the first. The review
+ends when no change is left. The diff compares lines first and then the words
+within changed lines, so a change stays within its own paragraph.
+
+The changes stay pending until you decide on them, even across restarts: on
+opening, a file is reviewed against the text from before the changes still
+pending, or else the text it had when last seen here. So changes another
+program made while the app was closed are up for review too.
+
+When the window is too narrow for the buttons in the margin, they get a row
+above each change.
+
+If you have unsaved edits when the file changes on disk, nothing is taken in:
+the message line offers `:reload`, which takes the file and shows how it
+differs from your edits, so you can reject the changes that undo yours.
+
+## Comments
+
+Comments are kept in the file as [CriticMarkup](https://fletcher.github.io/MultiMarkdown-6/syntax/critic.html),
+so an agent working on the file reads them. The loop: leave notes, ask the
+agent to "address the comments in draft.md", then review its changes.
+
+- `space c` asks for a note. With text selected (`w`, `x`, `v`...), the note is
+  about that text, which is highlighted: `{==this text==}{>>the note<<}`. With
+  only the cursor, the note goes at the end of the line: `{>>the note<<}`.
+- `]c` / `[c` select the next / previous comment, and `space C` removes the
+  comments under the selections, keeping the highlighted text.
+- Away from the cursor, the markup is hidden: notes read as asides after a ✎,
+  highlighted text has a background. On the cursor's line the source shows.
+- The docx export leaves comments out.
+
+## Version history
+
+Each time a file is opened, saved or changed by another program, its text is
+kept as a version in `~/Library/Application Support/dev.gprevot.md-editor/history/`
+(the latest 100 per file; text equal to the latest version is not kept twice).
+`space h` (or `:history`) opens the versions, newest first, with a preview of
+what changed since each one. Enter brings a version back as changes to review
+against the current text: accept the ones you want back, reject the others,
+`:w` to keep the result. `C-s` / `C-v` open it as a scratch buffer in a split
+instead.
 
 ## Theme
 
@@ -93,7 +167,7 @@ if set) and applied over the defaults in `src/config.ts`:
 
 - `theme`, including `theme = { light = "...", dark = "..." }`, which follows
   the macOS appearance. A theme picked with `:theme` wins over it.
-- `[editor]`: `cursorline`, `soft-wrap.enable`, `auto-save` (focus lost), and
+- `[editor]`: `cursorline`, `soft-wrap.enable`, `text-width`, `auto-save` (focus lost), and
   whether `gutters` has line numbers.
 - `[keys.normal]` and `[keys.insert]`. A binding that uses a command this
   editor lacks is skipped whole (a sequence run halfway would do something
@@ -149,7 +223,7 @@ Closing the window, ⌘W or ⌘Q with unsaved buffers asks whether to save them.
 on the same buffer edit the same text, but undo is per window: `u` undoes the
 edits made in that window.
 
-Pressing `g`, `m`, `z`, `space`, `C-w`, `mi` or `ma` shows Helix's which-key popup.
+Pressing `g`, `m`, `z`, `[`, `]`, `space`, `space d`, `C-w`, `mi` or `ma` shows Helix's which-key popup.
 `:` completes command names, showing each one's doc; Tab and Shift-Tab cycle,
 and `:o`, `:w` and `:export-docx` complete file paths: Enter on a folder lists
 what is inside it, Enter on a file runs the command. `/`, `?`, `s` and `S`
@@ -182,13 +256,16 @@ style.
 
 ```
 src/helix/        modal editing: state, motions, text objects, commands, keymap, dispatcher
+src/review.ts     reviewing outside changes inline (with the prose diff of src/diff.ts)
+src/comments.ts   comments in CriticMarkup (parsing in src/criticmarkup.ts)
+src/history.ts    the version history picker
 src/preview/      live preview decorations and table rendering
 src/export/       markdown → docx
 src/theme/        Kanagawa, Helix themes, light and dark
 src/helixConfig.ts  reading ~/.config/helix/config.toml
 src/fileformat.ts line endings and encodings
 src/backend.ts    files, dialogs, clipboard (Tauri, or an in-memory stand-in in a browser)
-src-tauri/        the Rust shell: file I/O, the file watcher, crash recovery, spelling
+src-tauri/        the Rust shell: file I/O, the file watcher, crash recovery, version history, spelling
 tests/            unit tests (vitest), and tests/e2e: the editor in Chrome
 docs/             the roadmap
 ```
@@ -202,9 +279,12 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 The unit tests cover the ported Helix motions and text objects, the docx
-output, line endings, Helix themes and config. The browser tests run the
+output, line endings, Helix themes and config, the prose diff, CriticMarkup
+and the history preview. The browser tests run the
 editor in Chrome against the in-memory backend with real key presses: live
 preview, windows, buffers, pickers, spelling, themes, line endings, crash
-recovery (a page reload stands in for a restart), and a 120,000-line file,
-with timings. They use the installed Chrome, or `CHROME_PATH`. The Rust tests
-cover encodings and atomic writes. CI runs all three on macOS.
+recovery (a page reload stands in for a restart), reviewing outside changes
+(across two windows too), comments, version history, zoom, and a
+120,000-line file, with timings. They use the installed Chrome, or
+`CHROME_PATH`. The Rust tests cover encodings, atomic writes and the version
+history. CI runs all three on macOS.

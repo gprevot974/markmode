@@ -7,6 +7,12 @@ it, and the rest widens its reach.
 
 ## 1. Make the LLM workflow the main feature
 
+*Done: see "Reviewing outside changes", "Comments" and "Version history" in
+the README. The keys differ from the first idea: `space y` is Helix's yank to
+clipboard, so changes are decided with `space d a` / `space d r`, and `]g` /
+`[g` move between them, as between diff hunks in Helix. `]c` / `[c` move
+between comments.*
+
 The app does not need its own chat client. People already run Claude Code,
 Codex, Aider and similar tools against files on disk, and the editor already
 watches open files and detects conflicts. The useful step is making those

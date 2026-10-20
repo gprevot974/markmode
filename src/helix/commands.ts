@@ -39,6 +39,8 @@ import { wordObject, paragraphObject, pairObject, pairFor, findEnclosingPair, ma
 import { startJump } from "./jumplabels.ts";
 import { textObjectInfo } from "./docs.ts";
 import { spellCommands } from "../spell.ts";
+import { reviewCommands } from "../review.ts";
+import { commentCommands } from "../comments.ts";
 import type { PromptOptions } from "../ui/prompt.ts";
 
 export const windowCommands = [
@@ -71,6 +73,7 @@ export interface Host {
   clipboardWrite(text: string): Promise<void>;
   filePicker(inCurrentDir: boolean): void;
   bufferPicker(): void;
+  historyPicker(): void;
   gotoBuffer(which: "next" | "previous" | "last"): void;
   windowCommand(cmd: WindowCommand): void;
 }
@@ -914,8 +917,12 @@ export const commands: Record<string, Command> = {
   paste_clipboard_before: pasteClipboard("before"),
   replace_selections_with_clipboard: pasteClipboard("replace"),
 
-  // Files, buffers and windows
   ...spellCommands,
+  ...reviewCommands,
+  ...commentCommands,
+
+  // Files, buffers and windows
+  history_picker: ({ host }) => host.historyPicker(),
 
   file_picker: ({ host }) => host.filePicker(false),
   file_picker_in_current_directory: ({ host }) => host.filePicker(true),

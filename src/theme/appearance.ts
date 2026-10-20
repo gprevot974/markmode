@@ -61,8 +61,8 @@ async function apply() {
     vars = themeVariables(theme);
   }
   const root = document.documentElement;
-  // Including the ones index.html set for the first paint.
-  for (const v of [...root.style].filter((p) => p.startsWith("--"))) root.style.removeProperty(v);
+  // Including the ones index.html set for the first paint; the zoom is not the theme's.
+  for (const v of [...root.style].filter((p) => p.startsWith("--") && p !== "--zoom")) root.style.removeProperty(v);
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   root.dataset.theme = light ? "light" : "dark";
   if (!preview) storage((s) => (builtin ? s.removeItem(VARS_KEY) : s.setItem(VARS_KEY, JSON.stringify({ light, vars }))));

@@ -129,6 +129,9 @@ const ROLES: Record<string, Source[]> = {
   "--link": [["markup.link.text", "fg"], ["markup.link.url", "fg"]],
   "--list": [["markup.list", "fg"]],
   "--quote": [["markup.quote", "fg"]],
+  "--diff-plus": [["diff.plus", "fg"]],
+  "--diff-minus": [["diff.minus", "fg"]],
+  "--note": [["info", "fg"], ["hint", "fg"]],
 };
 
 /** The CSS variables for a theme. Colors derived from others use color-mix(). */

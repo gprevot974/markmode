@@ -9,6 +9,8 @@ export interface Preview {
   text: string;
   /** One-based line to highlight and scroll to. */
   line?: number;
+  /** A class for each line, by index (a diff's added and removed lines). */
+  classes?: string[];
 }
 
 export interface PickerOptions<T> {
@@ -126,7 +128,7 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
     const first = Math.max(0, Math.min(focus - 1 - PREVIEW_LINES / 2, lines.length - PREVIEW_LINES));
     const els = lines.slice(first, first + PREVIEW_LINES).map((text, i) => {
       const el = document.createElement("div");
-      el.className = preview.line === first + i + 1 ? "pk-line current" : "pk-line";
+      el.className = ["pk-line", preview.classes?.[first + i], preview.line === first + i + 1 && "current"].filter(Boolean).join(" ");
       el.textContent = text || " ";
       return el;
     });

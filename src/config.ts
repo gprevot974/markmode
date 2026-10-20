@@ -21,6 +21,8 @@ export const config = {
   // Underline misspelled words, using the macOS spell checker and its languages
   spellcheck: true,
   softWrap: true,
+  // Where :reflow wraps lines
+  textWidth: 80,
   // [editor.auto-save] focus-lost
   autoSaveOnFocusLost: true,
 

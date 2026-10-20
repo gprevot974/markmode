@@ -1,4 +1,4 @@
-import { Annotation, EditorSelection, EditorState, type Extension, Text, Transaction } from "@codemirror/state";
+import { EditorSelection, EditorState, type Extension, type StateEffect, Text, Transaction } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -15,6 +15,12 @@ import { jumpLabels } from "./helix/jumplabels.ts";
 import { commands, type Host, type WindowCommand } from "./helix/commands.ts";
 import { livePreview } from "./preview/livePreview.ts";
 import { spellcheck } from "./spell.ts";
+import { comments } from "./comments.ts";
+import { asChange, changesOf, endReview, originalOf, replayed, reviewEffects, reviewing, reviewSlot, startReview } from "./review.ts";
+import { describeSnapshot, diffPreview } from "./history.ts";
+import { initZoom, setZoom, zoomLevel, zoomStep } from "./ui/zoom.ts";
+import { reflow } from "./reflow.ts";
+import type { Snapshot, SnapshotKind } from "./backend.ts";
 import { kanagawa } from "./theme/kanagawa.ts";
 import { currentTheme, endThemePreview, initTheme, previewTheme, setTheme, themeNames } from "./theme/appearance.ts";
 import { applyHelixConfig } from "./helixConfig.ts";
@@ -59,9 +65,6 @@ interface RecoveryCopy {
   format: FileFormat;
   time: number;
 }
-
-/** Marks an edit replayed from another window showing the same document. */
-const synced = Annotation.define<boolean>();
 
 /** A buffer: an open file or a scratch document. */
 class Doc {
@@ -171,7 +174,8 @@ class App implements Host {
     return this.active.view;
   }
 
-  private createState(doc: string | Text, selection?: EditorSelection): EditorState {
+  /** A new editor state; `original` is the text from before the outside changes under review. */
+  private createState(doc: string | Text, selection?: EditorSelection, original: Text | null = null): EditorState {
     const extensions: Extension[] = [
       helixState,
       history({ newGroupDelay: 10 * 60_000 }),
@@ -182,6 +186,8 @@ class App implements Host {
       config.softWrap ? EditorView.lineWrapping : [],
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       livePreview,
+      comments,
+      reviewSlot(original),
       config.spellcheck
         ? spellcheck({
             check: (text) => backend.checkSpelling(text),
@@ -213,14 +219,15 @@ class App implements Host {
 
   // ── Documents ──────────────────────────────────────────────────────────────
 
-  private addDoc(path: string | null, text: string, format = defaultFormat): Doc {
-    const doc = new Doc(path, this.createState(text), format);
+  private addDoc(path: string | null, text: string, format = defaultFormat, original: Text | null = null): Doc {
+    const doc = new Doc(path, this.createState(text, undefined, original), format);
     this.docs.push(doc);
     if (path) this.watch(path);
     return doc;
   }
 
   private removeDoc(doc: Doc) {
+    void this.syncBaseline(doc);
     this.docs.splice(this.docs.indexOf(doc), 1);
     if (this.recovered.delete(doc)) void backend.recoveryRemove(doc.id).catch(() => {});
     if (doc.path) void backend.unwatch(doc.path);
@@ -263,7 +270,7 @@ class App implements Host {
     // own state on that text, kept in step by `afterTransactions`.
     const live = this.windowsShowing(doc)[0];
     win.doc = doc;
-    win.view.setState(live ? this.createState(live.view.state.doc, live.view.state.selection) : doc.state);
+    win.view.setState(live ? this.createState(live.view.state.doc, live.view.state.selection, reviewOriginal(live.view.state)) : doc.state);
     doc.lastAccess = ++this.clock;
     this.renderStatus(win);
     if (win === this.active) this.updateTitle();
@@ -273,15 +280,19 @@ class App implements Host {
     let doc = this.docs.find((d) => d.path === path);
     if (!doc) {
       let file = { text: "", format: defaultFormat };
+      let exists = true;
       try {
         const disk = await backend.readText(path);
         file = fromDisk(disk.text, disk.format);
       } catch (err) {
+        exists = false;
         // A path that does not exist yet becomes a new file on the first write.
         if (!/os error 2|not found/i.test(String(err))) throw err;
         this.message(`new file ${basename(path)}`);
       }
-      doc = this.addDoc(path, file.text, file.format);
+      doc = await this.addFileDoc(path, file.text, file.format, exists);
+      const changes = changesOf(doc.state).length;
+      if (changes) this.message(`${basename(path)} changed since it was last open here: ${reviewHint(changes)}`);
     }
     const win = how === "replace" ? this.active : this.split(how === "vsplit" ? "row" : "column");
     this.replace(win, doc);
@@ -362,17 +373,26 @@ class App implements Host {
     return win;
   }
 
-  /** Replays edits into the other windows showing the same document. */
+  /**
+   * Replays edits, and changes to the review, into the other windows showing
+   * the same document. Ends the review once no change is left to review.
+   */
   private afterTransactions(win: Win, trs: readonly Transaction[]) {
     if (trs.some((tr) => tr.docChanged)) this.scheduleRecovery();
+    let reviewed = false;
     for (const tr of trs) {
-      if (!tr.docChanged || tr.annotation(synced)) continue;
+      const effects = reviewEffects(tr);
+      reviewed ||= tr.docChanged || effects.length > 0;
+      if ((!tr.docChanged && !effects.length) || tr.annotation(replayed)) continue;
       for (const other of this.windowsShowing(win.doc)) {
         if (other === win) continue;
         // Undo stays per window: each one undoes its own edits.
-        other.view.dispatch({ changes: tr.changes, annotations: [synced.of(true), Transaction.addToHistory.of(false)] });
+        other.view.dispatch({ changes: tr.changes, effects, annotations: [replayed.of(true), Transaction.addToHistory.of(false)] });
       }
     }
+    if (reviewed) this.scheduleRecovery();
+    const { state } = win.view;
+    if (reviewed && reviewing(state) && !changesOf(state).length) queueMicrotask(() => this.endReview(win.doc));
   }
 
   private setActive(win: Win) {
@@ -396,7 +416,7 @@ class App implements Host {
   private split(dir: SplitDir): Win {
     const from = this.active;
     const { state } = from.view;
-    const win = this.createWindow(from.doc, this.createState(state.doc, state.selection));
+    const win = this.createWindow(from.doc, this.createState(state.doc, state.selection, reviewOriginal(state)));
     this.layout.split(from, win, dir);
     win.view.dispatch({ effects: from.view.scrollSnapshot() });
     this.focus(win);
@@ -540,6 +560,7 @@ class App implements Host {
     if (typable?.args === "theme") return choices(await themeNames());
     if (typable?.args === "encoding") return choices(encodings);
     if (typable?.args === "line-ending") return choices(lineEndings);
+    if (typable?.args === "zoom") return choices(["in", "out", "reset", "100", "125", "150"]);
     if (typable?.args !== "path") return [];
     const slash = arg.lastIndexOf("/");
     const dirPart = arg.slice(0, slash + 1);
@@ -691,6 +712,26 @@ class App implements Host {
               : "every binding in it is in use (changes apply on the next start)",
           );
         }
+        case "zoom": {
+          if (!arg) return this.message(`zoom ${Math.round(zoomLevel() * 100)}%`);
+          const percent = Number(arg.replace(/%$/, ""));
+          if (arg === "in" || arg === "out" || arg === "reset") return this.zoom(arg);
+          if (!percent) return this.message("zoom: in, out, reset or a percentage", "error");
+          return this.zoom(percent / 100);
+        }
+        case "history":
+          return this.historyPicker();
+        case "reflow": {
+          const width = arg ? Number(arg) : config.textWidth;
+          if (!(width > 0)) return this.message("reflow: a width in characters", "error");
+          return this.reflow(width);
+        }
+        case "reset-diff-change":
+          return await this.runCommand("reject_change");
+        case "accept-all-changes":
+          return await this.runCommand("accept_all_changes");
+        case "reject-all-changes":
+          return await this.runCommand("reject_all_changes");
         case "theme":
           if (!arg) return this.message(`theme: ${currentTheme()}`);
           return await setTheme(arg);
@@ -702,6 +743,43 @@ class App implements Host {
     } catch (err) {
       this.message(String(err), "error");
     }
+  }
+
+  /**
+   * Rewraps the lines under the selections; a selection that is only the
+   * cursor takes its paragraph (Helix takes the line, which here is often a
+   * whole paragraph anyway).
+   */
+  private reflow(width: number) {
+    const { state } = this.view;
+    const doc = state.doc;
+    const blank = (n: number) => !doc.line(n).text.trim();
+    const spans: [number, number][] = [];
+    for (const r of state.selection.ranges) {
+      let first = doc.lineAt(r.from).number;
+      let last = doc.lineAt(r.to > r.from + 1 ? r.to - 1 : r.from).number;
+      if (r.to - r.from <= 1) {
+        while (first > 1 && !blank(first - 1)) first--;
+        while (last < doc.lines && !blank(last + 1)) last++;
+      }
+      const prev = spans[spans.length - 1];
+      if (prev && first <= prev[1] + 1) prev[1] = Math.max(prev[1], last);
+      else spans.push([first, last]);
+    }
+    const changes = spans
+      .map(([first, last]) => {
+        const from = doc.line(first).from;
+        const to = doc.line(last).to;
+        return { from, to, insert: reflow(doc.sliceString(from, to), width) };
+      })
+      .filter((c) => c.insert !== doc.sliceString(c.from, c.to));
+    if (!changes.length) return this.message(`already within ${width} characters`);
+    this.view.dispatch({ changes, userEvent: "input.reflow", scrollIntoView: true });
+  }
+
+  /** Runs a key command from the command line. */
+  private async runCommand(name: string) {
+    await commands[name]({ view: this.view, host: this, count: 1, hasCount: false, readChar: () => {} });
   }
 
   /** Absolute path for what was typed: `~` is home, relative paths start at the current file. */
@@ -729,16 +807,22 @@ class App implements Host {
   private async quitAll(force: boolean) {
     const dirty = this.docs.filter((d) => this.isDirty(d));
     if (!force && dirty.length) return this.unsavedError(dirty, ":q!");
+    await this.exit();
+  }
+
+  /** Quits, keeping what each file is reviewed against for the next start. */
+  private async exit() {
+    await Promise.all(this.docs.map((d) => this.syncBaseline(d)));
     await backend.exit();
   }
 
   /** The close button, Cmd-W or Cmd-Q: asks before dropping unsaved changes. */
   private async requestQuit() {
     const dirty = this.docs.filter((d) => this.isDirty(d));
-    if (!dirty.length) return backend.exit();
+    if (!dirty.length) return this.exit();
     const answer = await backend.askUnsaved(dirty.map((d) => this.docName(d)));
-    if (answer === "discard") return backend.exit();
-    if (answer === "save" && (await this.writeAll(false))) return backend.exit();
+    if (answer === "discard") return this.exit();
+    if (answer === "save" && (await this.writeAll(false))) return this.exit();
     this.view.focus();
   }
 
@@ -755,6 +839,7 @@ class App implements Host {
   }
 
   private async syncRecovery() {
+    for (const doc of this.docs) await this.syncBaseline(doc);
     for (const doc of this.docs) {
       const text = this.stateOf(doc).doc;
       if (this.isDirty(doc)) {
@@ -799,7 +884,7 @@ class App implements Host {
           }
         }
         if (disk.text === copy.text && sameFormat(disk.format, copy.format)) continue;
-        doc = this.addDoc(copy.path, disk.text, disk.format);
+        doc = copy.path ? await this.addFileDoc(copy.path, disk.text, disk.format, true) : this.addDoc(null, disk.text, disk.format);
       }
       const current = this.stateOf(doc).doc.toString();
       doc.state = doc.state.update({ changes: diffChange(current, copy.text), userEvent: "recover" }).state;
@@ -829,6 +914,7 @@ class App implements Host {
     doc.savedDoc = text;
     doc.savedFormat = format;
     doc.diskConflict = false;
+    this.snapshot(target, text.toString(), "saved");
     this.scheduleRecovery();
     this.renderAllStatus();
     this.message(`written ${basename(target)} (${text.lines} lines)`);
@@ -851,25 +937,52 @@ class App implements Host {
     if (!doc.path) return this.message("no file to reload", "error");
     const disk = await backend.readText(doc.path);
     const { text, format } = fromDisk(disk.text, disk.format);
-    this.applyDiskText(doc, text, format);
-    this.message(`reloaded ${basename(doc.path)}`);
+    const changes = this.applyDiskText(doc, text, format);
+    this.message(`reloaded ${basename(doc.path)}${changes ? `: ${reviewHint(changes)}` : ""}`);
   }
 
-  // Applied as an edit rather than a fresh document, so selections stay put
-  // and `u` can undo what the other program wrote.
-  private applyDiskText(doc: Doc, text: string, format: FileFormat) {
-    const current = this.stateOf(doc).doc.toString();
-    if (text !== current) {
-      const spec = { changes: diffChange(current, text), annotations: isolateHistory.of("full"), userEvent: "reload" };
-      const win = this.windowsShowing(doc)[0];
-      if (win) win.view.dispatch(spec);
-      else doc.state = doc.state.update(spec).state;
-    }
+  /** Takes the file's text as it is on disk; returns the number of changes to review. */
+  private applyDiskText(doc: Doc, text: string, format: FileFormat): number {
+    const changes = this.takeText(doc, text, "reload");
     doc.savedDoc = this.stateOf(doc).doc;
     doc.format = doc.savedFormat = format;
     doc.diskConflict = false;
     this.scheduleRecovery();
     this.renderAllStatus();
+    return changes;
+  }
+
+  /**
+   * Replaces a document's text with an edit rather than a fresh document, so
+   * selections stay put and `u` can undo it, and opens a review of what it
+   * changed (unless one is open already, which then takes in these changes).
+   * Returns the number of changes to review.
+   */
+  private takeText(doc: Doc, text: string, userEvent: string): number {
+    const state = this.stateOf(doc);
+    const current = state.doc;
+    if (text !== current.toString()) {
+      const effects: StateEffect<unknown>[] = [asChange.of(null)];
+      // Through the current window when it shows the document: `u` undoes it there.
+      const wins = this.windowsShowing(doc).sort((a, b) => Number(b === this.active) - Number(a === this.active));
+      const [first, ...others] = wins;
+      if (!reviewing(state)) {
+        effects.push(startReview(current));
+        for (const w of others) w.view.dispatch({ effects: startReview(current) });
+      }
+      const spec = { changes: diffChange(current.toString(), text), effects, annotations: isolateHistory.of("full"), userEvent };
+      if (first) first.view.dispatch(spec);
+      else doc.state = doc.state.update(spec).state;
+    }
+    const after = this.stateOf(doc);
+    if (reviewing(after) && !changesOf(after).length) this.endReview(doc);
+    return changesOf(this.stateOf(doc)).length;
+  }
+
+  private endReview(doc: Doc) {
+    const wins = this.windowsShowing(doc);
+    for (const w of wins) if (reviewing(w.view.state)) w.view.dispatch({ effects: endReview() });
+    if (!wins.length && reviewing(doc.state)) doc.state = doc.state.update({ effects: endReview() }).state;
   }
 
   private async onDiskChange(doc: Doc) {
@@ -883,6 +996,7 @@ class App implements Host {
       return; // Mid-rename or deleted; a later event will tell.
     }
     const dirty = this.isDirty(doc);
+    if (text !== this.stateOf(doc).doc.toString()) this.snapshot(doc.path, text, "outside");
     if (text === this.stateOf(doc).doc.toString()) {
       // Our own save, someone wrote what we already have, or another program
       // changed only the encoding or line endings (taken unless we changed them too).
@@ -895,8 +1009,109 @@ class App implements Host {
       this.message(`${name} changed on disk: :reload to take it, :w to overwrite it`, "error");
       return;
     }
-    this.applyDiskText(doc, text, format);
-    this.message(`${name} changed on disk, reloaded (u to undo)`);
+    const changes = this.applyDiskText(doc, text, format);
+    this.message(`${name} changed on disk: ${reviewHint(changes)}`);
+  }
+
+  // ── Version history ────────────────────────────────────────────────────────
+
+  /**
+   * A buffer for a file just read. What changed in it since it was last seen
+   * here (or since the changes still pending when the app quit) is up for review.
+   */
+  private async addFileDoc(path: string, text: string, format: FileFormat, exists: boolean): Promise<Doc> {
+    const seen = exists ? ((await backend.historyBaseline(path).catch(() => null)) ?? (await this.lastVersion(path))) : null;
+    const original = seen !== null && seen !== text ? Text.of(seen.split("\n")) : null;
+    const doc = this.addDoc(path, text, format, original);
+    if (text) this.snapshot(path, text, original ? "outside" : "opened");
+    if (original && !changesOf(doc.state).length) doc.state = doc.state.update({ effects: endReview() }).state;
+    if (seen !== null) this.baselines.set(doc, original ?? doc.savedDoc);
+    this.scheduleRecovery();
+    return doc;
+  }
+
+  /** Baselines as last written, by document. */
+  private baselines = new Map<Doc, Text>();
+
+  /**
+   * Writes down what the file's changes are reviewed against (see
+   * history.rs): the text from before the changes under review, or else the
+   * file as last seen here. Reopening it reviews what differs, so changes
+   * left pending at quitting stay pending.
+   */
+  private async syncBaseline(doc: Doc) {
+    if (!doc.path) return;
+    const state = this.stateOf(doc);
+    const baseline = reviewing(state) ? originalOf(state) : doc.savedDoc;
+    const written = this.baselines.get(doc);
+    if (written === baseline || written?.eq(baseline)) return;
+    this.baselines.set(doc, baseline);
+    await backend.historySetBaseline(doc.path, baseline.toString()).catch(() => this.baselines.delete(doc));
+  }
+
+  /** The text the file had when this app last saw it, from the version history. */
+  private async lastVersion(path: string): Promise<string | null> {
+    try {
+      const [latest] = await backend.historyList(path);
+      return latest ? await backend.historyRead(path, latest.id) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private snapshot(path: string, text: string, kind: SnapshotKind) {
+    void backend.historyAdd(path, text, kind).catch((e) => this.message(`no version history for ${basename(path)}: ${e}`, "error"));
+  }
+
+  /**
+   * The versions kept of the current file, previewed as what changed since.
+   * Enter brings one back as an edit to review; C-s and C-v open it beside.
+   */
+  historyPicker() {
+    const doc = this.active.doc;
+    const path = doc.path;
+    if (!path) return this.message("a scratch buffer has no history", "error");
+    const read = (s: Snapshot) => backend.historyRead(path, s.id);
+    openPicker<Snapshot>(
+      {
+        title: `versions of ${basename(path)}`,
+        items: backend.historyList(path),
+        text: (s) => describeSnapshot(s),
+        preview: async (s) => diffPreview(await read(s), this.stateOf(doc).doc.toString()),
+        onSelect: (s, how) =>
+          void read(s)
+            .then((text) => this.restoreVersion(doc, s, text, how))
+            .catch((e) => this.message(String(e), "error")),
+      },
+      () => this.view.focus(),
+    );
+  }
+
+  private restoreVersion(doc: Doc, s: Snapshot, text: string, how: OpenHow) {
+    if (!this.docs.includes(doc)) return;
+    const when = describeSnapshot(s).split("  ")[0];
+    if (how !== "replace") {
+      const win = this.split(how === "vsplit" ? "row" : "column");
+      this.show(win, this.addDoc(null, text));
+      return this.message(`the version of ${basename(doc.path ?? "")} from ${when}, as a scratch buffer`);
+    }
+    if (this.active.doc !== doc) this.show(this.active, doc);
+    const changes = this.takeText(doc, text, "restore");
+    this.renderAllStatus();
+    if (!changes) return this.message("that version is the current text");
+    this.message(`brought back the version from ${when}: ${reviewHint(changes)}; :w writes it`);
+  }
+
+  // ── Zoom ───────────────────────────────────────────────────────────────────
+
+  zoom(how: "in" | "out" | "reset" | number) {
+    if (how === "in" || how === "out") zoomStep(how === "in" ? 1 : -1);
+    else setZoom(how === "reset" ? 1 : how);
+    for (const w of this.layout.windows()) {
+      w.view.requestMeasure();
+      w.view.dispatch({ effects: EditorView.scrollIntoView(w.view.state.selection.main.head, { y: "center" }) });
+    }
+    this.message(`zoom ${Math.round(zoomLevel() * 100)}%`);
   }
 
   async exportDocx(path?: string) {
@@ -928,6 +1143,9 @@ class App implements Host {
     const key = e.key.toLowerCase();
     let action: (() => unknown) | null = null;
     if (key === "s" && !e.shiftKey) action = () => this.save(this.active.doc);
+    else if (key === "=" || key === "+") action = () => this.zoom("in");
+    else if (key === "-") action = () => this.zoom("out");
+    else if (key === "0") action = () => this.zoom("reset");
     else if (key === "o") action = () => this.openFile();
     else if (key === "e" && e.shiftKey) action = () => this.exportDocx();
     if (!action) return;
@@ -950,6 +1168,7 @@ if (config.readHelixConfig) {
 }
 const themeError = await initTheme(config.theme);
 if (themeError) startupErrors.push(themeError);
+initZoom();
 const app = new App();
 await app.init();
 const recovered = await app.restoreRecovered();
@@ -959,6 +1178,16 @@ else if (recovered) app.replace(app.active, recovered);
 app.view.focus();
 if (startupErrors.length) app.message(startupErrors.join("; "), "error");
 else reportSkippedKeys(skippedKeys);
+
+function reviewOriginal(state: EditorState): Text | null {
+  return reviewing(state) ? originalOf(state) : null;
+}
+
+function reviewHint(changes: number): string {
+  if (!changes) return "no changes";
+  const n = `${changes} change${changes > 1 ? "s" : ""}`;
+  return `${n} to review (]g goes to the next, space d a accepts, space d r rejects, u undoes all)`;
+}
 
 /** Says once which Helix bindings were left out, and again only when that changes. */
 function reportSkippedKeys(skipped: string[]) {

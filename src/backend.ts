@@ -62,6 +62,23 @@ export interface Backend {
   /** A Helix theme file, parsed (its `inherits` not yet applied). */
   helixTheme(name: string): Promise<Record<string, unknown>>;
   helixThemes(): Promise<string[]>;
+  /** Keeps a version of a file's text; false when it equals the latest one kept. */
+  historyAdd(path: string, text: string, kind: SnapshotKind): Promise<boolean>;
+  /** The versions kept of a file, newest first. */
+  historyList(path: string): Promise<Snapshot[]>;
+  historyRead(path: string, id: string): Promise<string>;
+  /** The text the file's changes are reviewed against (see history.rs); null when there is none yet. */
+  historyBaseline(path: string): Promise<string | null>;
+  historySetBaseline(path: string, text: string): Promise<void>;
+}
+
+export type SnapshotKind = "opened" | "saved" | "outside";
+
+export interface Snapshot {
+  id: string;
+  /** Milliseconds since the epoch. */
+  time: number;
+  kind: SnapshotKind;
 }
 
 export interface FileText {
@@ -140,12 +157,19 @@ const tauriBackend: Backend = {
   helixConfigPath: () => invoke("helix_config_path"),
   helixTheme: (name) => invoke("helix_theme", { name }),
   helixThemes: () => invoke("helix_themes"),
+  historyAdd: (path, text, kind) => invoke("history_add", { path, text, kind }),
+  historyList: (path) => invoke("history_list", { path }),
+  historyRead: (path, id) => invoke("history_read", { path, id }),
+  historyBaseline: (path) => invoke("history_baseline", { path }),
+  historySetBaseline: (path, text) => invoke("history_set_baseline", { path, text }),
 };
 
 // ── Browser stand-in ─────────────────────────────────────────────────────────
 
 const FILE = "md-editor.file.";
 const RECOVERY = "md-editor.recovery.";
+const HISTORY = "md-editor.history.";
+const BASELINE = "md-editor.baseline.";
 
 /** The tab's storage, which outlives reloading the page; null where it is blocked. */
 function tabStorage(): Storage | null {
@@ -158,6 +182,8 @@ function tabStorage(): Storage | null {
 
 // Files written in this tab are kept in its storage too, so they are still
 // there after reloading the page, as they would be on disk after a restart.
+// Writing a file tells whoever watches it, as the system's file watcher does,
+// so a test can play another program changing a file.
 const memoryFiles = new Map<string, string>([
   ["/sample.md", sample],
   ["/notes/ideas.md", "# Ideas\n\n- A second file, for trying buffers and the file picker.\n"],
@@ -165,6 +191,12 @@ const memoryFiles = new Map<string, string>([
     .filter(([k]) => k.startsWith(FILE))
     .map(([k, v]): [string, string] => [k.slice(FILE.length), v]),
 ]);
+
+const watched = new Set<string>();
+let fileChanged: (path: string) => void = () => {};
+
+type StoredSnapshot = Snapshot & { text: string };
+const historyOf = (path: string): StoredSnapshot[] => JSON.parse(tabStorage()?.getItem(HISTORY + path) ?? "[]");
 
 const browserBackend: Backend = {
   async readText(path) {
@@ -175,6 +207,7 @@ const browserBackend: Backend = {
   async writeText(path, contents) {
     memoryFiles.set(path, contents);
     tabStorage()?.setItem(FILE + path, contents);
+    if (watched.has(path)) setTimeout(() => fileChanged(path));
   },
   async writeBytes(path, bytes) {
     const a = document.createElement("a");
@@ -198,9 +231,11 @@ const browserBackend: Backend = {
     }),
   pickSave: async (defaultPath) => prompt("Save as", defaultPath),
   initialFile: async () => "/sample.md",
-  watch: async () => {},
-  unwatch: async () => {},
-  onFileChanged: () => {},
+  watch: async (path) => void watched.add(path),
+  unwatch: async (path) => void watched.delete(path),
+  onFileChanged(cb) {
+    fileChanged = cb;
+  },
   onOpenFile: () => {},
   onFocusLost(cb) {
     window.addEventListener("blur", cb);
@@ -259,6 +294,32 @@ const browserBackend: Backend = {
     throw new Error(`no Helix theme named ${name}`);
   },
   helixThemes: async () => [],
+  async historyAdd(path, text, kind) {
+    const list = historyOf(path);
+    if (list[list.length - 1]?.text === text) return false;
+    const time = Math.max(Date.now(), (list[list.length - 1]?.time ?? 0) + 1);
+    list.push({ id: `${time}-${kind}.md`, time, kind, text });
+    try {
+      tabStorage()?.setItem(HISTORY + path, JSON.stringify(list.slice(-100)));
+    } catch {
+      return false; // Over the storage quota: a large file.
+    }
+    return true;
+  },
+  historyList: async (path) => historyOf(path).map(({ id, time, kind }) => ({ id, time, kind })).reverse(),
+  historyBaseline: async (path) => tabStorage()?.getItem(BASELINE + path) ?? null,
+  async historySetBaseline(path, text) {
+    try {
+      tabStorage()?.setItem(BASELINE + path, text);
+    } catch {
+      // Over the storage quota: a large file.
+    }
+  },
+  async historyRead(path, id) {
+    const found = historyOf(path).find((s) => s.id === id);
+    if (!found) throw new Error(`no version ${id} of ${path}`);
+    return found.text;
+  },
 };
 
 

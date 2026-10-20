@@ -6,7 +6,7 @@ export interface Typable {
   aliases: string[];
   doc: string;
   /** What the argument completes to. */
-  args?: "path" | "theme" | "encoding" | "line-ending";
+  args?: "path" | "theme" | "encoding" | "line-ending" | "zoom";
 }
 
 export const typables: Typable[] = [
@@ -34,6 +34,12 @@ export const typables: Typable[] = [
   { name: "line-ending", aliases: [], doc: "Set the line endings the file is saved with: lf or crlf. Without an argument, shows them", args: "line-ending" },
   { name: "config-open", aliases: [], doc: "Open your Helix config.toml, and list the bindings in it this editor skips" },
   { name: "theme", aliases: [], doc: "Change the theme: auto (Kanagawa, following macOS), light, dark, or any Helix theme by name. Without an argument, shows the current one", args: "theme" },
+  { name: "history", aliases: [], doc: "Pick an earlier version of the file, kept on each open, save and outside change, to bring back" },
+  { name: "reset-diff-change", aliases: ["diffget", "diffg"], doc: "Reject the outside changes under the selections, bringing back the text from before" },
+  { name: "accept-all-changes", aliases: [], doc: "Accept every outside change under review" },
+  { name: "reject-all-changes", aliases: [], doc: "Reject every outside change under review" },
+  { name: "reflow", aliases: [], doc: "Hard-wrap the selected lines (with only the cursor, its paragraph) to the given width, or to text-width (80)" },
+  { name: "zoom", aliases: [], doc: "Make the text bigger or smaller: in, out, reset or a percentage (also Cmd-=, Cmd--, Cmd-0)", args: "zoom" },
   { name: "goto", aliases: ["g"], doc: "Goto line number" },
   { name: "help", aliases: ["h"], doc: "List the typable commands" },
 ];

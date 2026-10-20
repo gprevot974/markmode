@@ -35,8 +35,9 @@
   --prose-font: "Charter", "Iowan Old Style", "Georgia", serif;
   --ui-font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   --mono-font: "JetBrains Mono", "SF Mono", "Menlo", monospace;
-  --measure: 46rem;
-  --text-size: 18px;
+  /* --zoom is set on the root element by ui/zoom.ts (Cmd-= and Cmd--). */
+  --measure: calc(46rem * var(--zoom, 1));
+  --text-size: calc(18px * var(--zoom, 1));
 
   /* What the preview is colored with. A Helix theme sets these from its
      markup scopes; the built-in theme takes them from its palette. */
@@ -50,6 +51,10 @@
   --link: var(--spring-blue);
   --list: var(--orange);
   --quote: var(--spring-violet);
+  /* Outside changes under review, and comments. */
+  --diff-plus: var(--autumn-green);
+  --diff-minus: var(--red);
+  --note: var(--yellow);
 }
 
 :root[data-theme="light"] {
@@ -684,6 +689,40 @@ body {
   background: var(--bg-line);
   color: var(--fg);
 }
+/* A version's changes since, in the history picker. */
+.pk-line.pk-head {
+  color: var(--fg);
+  font-weight: 700;
+  padding-bottom: 0.4rem;
+}
+.pk-line.pk-skip {
+  color: var(--fg-dim);
+}
+.pk-line.pk-add,
+.pk-line.pk-del {
+  position: relative;
+}
+.pk-line.pk-add {
+  background: color-mix(in srgb, var(--diff-plus) 16%, transparent);
+}
+.pk-line.pk-del {
+  background: color-mix(in srgb, var(--diff-minus) 14%, transparent);
+  color: var(--fg-dim);
+  text-decoration: line-through color-mix(in srgb, var(--diff-minus) 60%, transparent);
+}
+.pk-line.pk-add::before,
+.pk-line.pk-del::before {
+  position: absolute;
+  left: 0.2rem;
+}
+.pk-line.pk-add::before {
+  content: "+";
+  color: var(--diff-plus);
+}
+.pk-line.pk-del::before {
+  content: "−";
+  color: var(--diff-minus);
+}
 @media (max-width: 900px) {
   .pk-preview {
     display: none;
@@ -719,4 +758,114 @@ body {
   width: 1ch;
   color: var(--orange);
   font-family: var(--mono-font);
+}
+
+/* ── Outside changes under review (review.ts) ─────────────────────────────── */
+
+/* Added text has a tinted background. What it replaced is shown dimmed above
+   it, with only the removed words struck out; a paragraph with a few words
+   changed shows the removed ones struck out in place. */
+.cm-editor.cm-merge-b .cm-changedLine,
+.cm-editor .cm-inlineChangedLine {
+  background: color-mix(in srgb, var(--diff-plus) 12%, transparent);
+}
+.cm-editor.cm-merge-b .cm-changedText {
+  background: color-mix(in srgb, var(--diff-plus) 28%, transparent);
+}
+.cm-editor .cm-deletedChunk {
+  position: relative;
+  padding: 0.1rem 0.25rem;
+  background: color-mix(in srgb, var(--diff-minus) 10%, transparent);
+  color: var(--fg-dim);
+  user-select: none;
+}
+/* Nothing removed (an addition, or words changed in place): only the buttons. */
+.cm-editor .cm-deletedChunk:not(:has(.cm-deletedLine)) {
+  height: 0;
+  padding: 0;
+  background: none;
+}
+/* Not part of the text: a selection reaching across it does not paint it. */
+.cm-editor .cm-deletedChunk ::selection {
+  background: transparent;
+}
+.cm-editor .cm-deletedChunk .cm-deletedLine del {
+  text-decoration: none;
+}
+.cm-editor .cm-deletedText,
+.cm-editor .cm-deletedChunk .cm-deletedText {
+  background: color-mix(in srgb, var(--diff-minus) 20%, transparent);
+  color: var(--fg-muted);
+  text-decoration: line-through color-mix(in srgb, var(--diff-minus) 70%, transparent);
+}
+/* Accept and Reject sit in the margin, left of the line numbers. */
+.cm-editor .cm-deletedChunk .cm-chunkButtons {
+  position: absolute;
+  top: 0.15rem;
+  right: calc(100% + 3.4rem * var(--zoom, 1) + 0.6rem);
+  display: flex;
+  gap: 0.25rem;
+  width: max-content;
+  font-family: var(--ui-font);
+  user-select: none;
+}
+.review-narrow .cm-deletedChunk .cm-chunkButtons {
+  position: static;
+  width: auto;
+  justify-content: flex-end;
+  padding: 0.15rem 0;
+}
+.review-narrow .cm-deletedChunk:not(:has(.cm-deletedLine)) {
+  height: auto;
+}
+.cm-editor .cm-deletedChunk button {
+  padding: 0.05rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: var(--bg);
+  font: 600 11px var(--ui-font);
+  cursor: pointer;
+  opacity: 0.75;
+}
+.cm-editor .cm-deletedChunk button:hover {
+  opacity: 1;
+}
+.cm-editor .cm-deletedChunk button.review-accept {
+  color: var(--diff-plus);
+}
+.cm-editor .cm-deletedChunk button.review-reject {
+  color: var(--diff-minus);
+}
+.cm-editor .cm-changeGutter {
+  width: 3px;
+  padding: 0;
+}
+.cm-editor.cm-merge-b .cm-changedLineGutter,
+.cm-editor .cm-inlineChangedLineGutter {
+  background: var(--diff-plus);
+}
+.cm-editor .cm-deletedLineGutter {
+  background: var(--diff-minus);
+}
+
+/* ── Comments (comments.ts) ──────────────────────────────────────────────── */
+
+.md-highlight {
+  background: color-mix(in srgb, var(--note) 22%, transparent);
+  border-radius: 2px;
+}
+.md-note {
+  color: var(--note);
+  font-family: var(--ui-font);
+  font-size: 0.82em;
+  font-style: italic;
+}
+.md-note-mark {
+  color: var(--note);
+  font-family: var(--ui-font);
+  font-size: 0.82em;
+  padding: 0 0.3em 0 0.2em;
+}
+.md-note-source {
+  font-style: normal;
 }

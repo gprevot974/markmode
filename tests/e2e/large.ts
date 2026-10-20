@@ -58,6 +58,20 @@ export default async function ({ page, type, press, ev, check }: Harness) {
   console.log(`      saved in ${saved} ms`);
   check("saves in under 1 s", saved < 1000, saved);
 
+  // Another program changes one line in the middle: the change is taken in
+  // and offered for review quickly.
+  const reviewed = await ev(async () => {
+    const before = app.view.state.doc.toString() as string;
+    const mid = before.indexOf("const x = 1;", before.length / 2);
+    const t0 = performance.now();
+    await backend.writeText("/large.md", before.slice(0, mid) + "const y = 2;" + before.slice(mid + 12));
+    while (!document.getElementById("message")!.textContent!.includes("to review")) await new Promise((r) => setTimeout(r, 5));
+    return { ms: Math.round(performance.now() - t0), message: document.getElementById("message")!.textContent };
+  });
+  console.log(`      outside change reviewed in ${reviewed.ms} ms (with the 120 ms the watcher waits)`);
+  check("an outside change is up for review in under 1 s", reviewed.ms < 1000 && reviewed.message!.includes("1 change to review"), reviewed);
+  await ev(() => app.runTypable("accept-all-changes"));
+
   await type("ge");
   await page.waitForTimeout(100);
   check("ge reaches the end", (await ev(() => app.view.state.doc.lineAt(app.view.state.selection.main.head).number)) >= LINES);

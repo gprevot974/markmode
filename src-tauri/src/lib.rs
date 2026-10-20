@@ -5,6 +5,7 @@
 
 mod files;
 mod helix;
+mod history;
 mod recovery;
 
 use std::collections::HashSet;
@@ -330,7 +331,12 @@ pub fn run() {
             helix::helix_config,
             helix::helix_config_path,
             helix::helix_theme,
-            helix::helix_themes
+            helix::helix_themes,
+            history::history_add,
+            history::history_list,
+            history::history_read,
+            history::history_set_baseline,
+            history::history_baseline
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

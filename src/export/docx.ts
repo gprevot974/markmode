@@ -4,6 +4,8 @@
  *
  *   node scripts/build-docx.ts input.md output.docx
  *
+ * CriticMarkup comments ({>>note<<}, {==highlight==}) are left out.
+ *
  * Build directives are single-line HTML comments in the markdown:
  *   <!-- footer: Commercially confidential -->  text left of the page number
  *   <!-- no-subtitle -->                        first "##" is a real section
@@ -29,6 +31,7 @@ import {
   SimpleField,
   convertInchesToTwip,
 } from "docx";
+import { stripComments } from "../criticmarkup.ts";
 
 type Alignment = (typeof AlignmentType)[keyof typeof AlignmentType];
 
@@ -228,7 +231,8 @@ function buildTable(rows: string[][], aligns: string[]) {
 
 // ── Markdown parsing ─────────────────────────────────────────────────────────
 export function buildDocument(src: string): Document {
-  const lines = src.split("\n");
+  // Comments are notes for the writers (and their agents), not for readers.
+  const lines = stripComments(src).split("\n");
   const children: (Paragraph | Table)[] = [];
   let i = 0;
   let olInstance = 0;

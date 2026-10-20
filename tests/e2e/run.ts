@@ -19,7 +19,7 @@ export interface Harness {
 
 export type Suite = (t: Harness) => Promise<void>;
 
-const SUITES = ["editing", "spelling", "theme", "files", "large"];
+const SUITES = ["editing", "spelling", "theme", "files", "review", "large"];
 
 async function open(browser: Browser, url: string, options: BrowserContextOptions, check: Harness["check"]) {
   const context = await browser.newContext({ viewport: { width: 1300, height: 860 }, ...options });

@@ -50,6 +50,7 @@ export function applyHelixConfig(toml: Table): string[] {
   else if (isTable(editor.gutters) && Array.isArray(editor.gutters.layout)) {
     config.lineNumbers = editor.gutters.layout.includes("line-numbers");
   }
+  if (typeof editor["text-width"] === "number") config.textWidth = editor["text-width"];
   const softWrap = editor["soft-wrap"];
   if (isTable(softWrap) && typeof softWrap.enable === "boolean") config.softWrap = softWrap.enable;
   const autoSave = editor["auto-save"];
