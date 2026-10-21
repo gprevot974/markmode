@@ -152,6 +152,7 @@ export const normalKeys: KeyTrie = {
     n: "goto_next_buffer",
     p: "goto_previous_buffer",
     a: "goto_last_accessed_file",
+    f: "goto_file",
   },
   m: {
     m: "match_brackets",
@@ -193,9 +194,10 @@ export const normalKeys: KeyTrie = {
     h: "history_picker",
     s: "symbol_picker",
     S: "workspace_symbol_picker",
+    "/": "global_search",
     j: "jumplist_picker",
-    // Outside changes under review.
-    d: {
+    // Outside changes under review, as `]g` / `[g` move between them.
+    g: {
       a: "accept_change",
       r: "reject_change",
       A: "accept_all_changes",

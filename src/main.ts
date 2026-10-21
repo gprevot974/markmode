@@ -13,9 +13,14 @@ import { normalKeys, insertKeys, mergeKeys } from "./helix/keymap.ts";
 import { selectionDecorations } from "./helix/cursor.ts";
 import { cursorLines } from "./helix/cursorline.ts";
 import { jumpLabels } from "./helix/jumplabels.ts";
-import { commands, type Host, type WindowCommand } from "./helix/commands.ts";
+import { commands, setSearchPattern, type Host, type WindowCommand } from "./helix/commands.ts";
 import { livePreview, setTableWidths, setTotalRows, tableWidths } from "./preview/livePreview.ts";
 import { frontMatterSyntax } from "./preview/frontMatterSyntax.ts";
+import { wikiLinkSyntax } from "./preview/wikiLinkSyntax.ts";
+import { footnoteSyntax } from "./preview/footnoteSyntax.ts";
+import { mathSyntax } from "./preview/math.ts";
+import { anchorLine, linkAt, MARKDOWN_PATH, resolveWiki } from "./links.ts";
+import { documentPath, loadImages, rasterizeSvgs, setImageReader } from "./images.ts";
 import { applyExportLook } from "./preview/exportLook.ts";
 import { frontMatter, setProperty } from "./frontmatter.ts";
 import { describeStyle, starterStyle, type ExportStyle } from "./export/style.ts";
@@ -30,6 +35,8 @@ import { describeSnapshot, diffPreview } from "./history.ts";
 import { initZoom, setZoom, zoomLevel, zoomStep } from "./ui/zoom.ts";
 import { reflow } from "./reflow.ts";
 import { type Heading, headings } from "./outline.ts";
+import { countNotes, countText, readable, type Readable, type Span } from "./wordCount.ts";
+import { MAX_MATCHES, searchRegex, searchText, type SearchMatch } from "./search.ts";
 import { clampSelection, type Jump, JumpList } from "./jumplist.ts";
 import type { Snapshot, SnapshotKind } from "./backend.ts";
 import { kanagawa } from "./theme/kanagawa.ts";
@@ -57,6 +64,14 @@ import {
 const $ = (id: string) => document.getElementById(id)!;
 const basename = (p: string) => p.split("/").pop() ?? p;
 const dirname = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
+/** `to` from the folder `from`, both absolute: `../notes/a.md`. */
+function relativePath(from: string, to: string): string {
+  const a = from.split("/").filter(Boolean);
+  const b = to.split("/").filter(Boolean);
+  let same = 0;
+  while (same < a.length && same < b.length - 1 && a[same] === b[same]) same++;
+  return [...Array(a.length - same).fill(".."), ...b.slice(same)].join("/");
+}
 
 /** The smallest single change turning `a` into `b`, so selections survive a reload. */
 function diffChange(a: string, b: string) {
@@ -72,6 +87,22 @@ const isMarkdownPath = (path: string | null) => !path || /\.(?:md|markdown|mdown
 
 /** Highlighting for the other files, by language name, loaded when such a file is opened. */
 const plainLanguages = new Map<string, LanguageSupport>();
+/** Files a link opens in their own app rather than here. */
+const EXTERNAL = /\.(?:png|jpe?g|gif|webp|svg|bmp|tiff?|heic|ico|pdf|docx?|xlsx?|pptx?|odt|ods|odp|key|pages|numbers|zip|gz|mp[34]|mov|m4a|wav|webm|html?)$/i;
+
+/** Cmd-click (Ctrl-click elsewhere) on a link follows it, as `gf` does. */
+const followOnClick = (host: { followLink(view: EditorView, pos: number): void }) =>
+  EditorView.domEventHandlers({
+    mousedown(e, view) {
+      if (!(navigator.platform.startsWith("Mac") ? e.metaKey : e.ctrlKey) || e.button !== 0) return false;
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos === null || !linkAt(view.state, pos)) return false;
+      e.preventDefault();
+      host.followLink(view, pos);
+      return true;
+    },
+  });
+
 const languageOf = (path: string) => LanguageDescription.matchFilename(languages, basename(path));
 
 async function loadLanguage(path: string) {
@@ -123,7 +154,7 @@ class Win implements Tile {
   parent: Split | null = null;
   doc: Doc;
   readonly view: EditorView;
-  readonly sl: Record<"mode" | "file" | "sels" | "format" | "pos", HTMLElement>;
+  readonly sl: Record<"mode" | "file" | "sels" | "words" | "format" | "pos", HTMLElement>;
   /** Where C-o goes back to. */
   jumps = new JumpList<Doc>();
 
@@ -144,6 +175,7 @@ class Win implements Tile {
       mode: span("sl-mode"),
       file: span("sl-file"),
       sels: span("sl-sels"),
+      words: span("sl-words"),
       format: span("sl-format"),
       pos: span("sl-pos"),
     };
@@ -221,7 +253,7 @@ class App implements Host {
       config.lineNumbers ? lineNumbers() : [],
       cursorLines(config.cursorline),
       config.softWrap ? EditorView.lineWrapping : [],
-      prose ? [markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [frontMatterSyntax] }), livePreview] : (plain ?? []),
+      prose ? [markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [frontMatterSyntax, wikiLinkSyntax, footnoteSyntax, mathSyntax] }), livePreview, followOnClick(this), documentPath.of(path)] : (plain ?? []),
       comments,
       reviewSlot(original),
       config.spellcheck && prose
@@ -548,6 +580,69 @@ class App implements Host {
     const pos = mode !== "insert" && main.head > main.anchor ? main.head - 1 : main.head;
     const line = state.doc.lineAt(pos);
     win.sl.pos.textContent = `${line.number}:${pos - line.from + 1}`;
+    this.renderWords(win);
+  }
+
+  // ── Word counts ────────────────────────────────────────────────────────────
+
+  private readables = new WeakMap<Text, { text: string; readable: Readable; words: number }>();
+  private wordsTimer: number | undefined;
+
+  /** What a reader sees of a document, worked out once for each version of it. */
+  private readableOf(doc: Text) {
+    let r = this.readables.get(doc);
+    if (!r) {
+      const text = doc.toString();
+      const shown = readable(text);
+      r = { text, readable: shown, words: countText(text, shown).words };
+      this.readables.set(doc, r);
+    }
+    return r;
+  }
+
+  /** The selections, unless there is only a cursor (Helix's is one character wide). */
+  private selected(state: EditorState): Span[] | undefined {
+    const ranges = state.selection.ranges.filter((r) => r.to - r.from > 1);
+    return ranges.length ? ranges.map((r): Span => [r.from, r.to]) : undefined;
+  }
+
+  /**
+   * The status line's word count: the document's, or the selection's of it.
+   * A long document is counted once typing pauses; the last count stays meanwhile.
+   */
+  private renderWords(win: Win) {
+    const { state } = win.view;
+    if (!isMarkdownPath(win.doc.path)) return void (win.sl.words.textContent = "");
+    // About 3 ms at this length.
+    if (!this.readables.has(state.doc) && state.doc.length > 30_000) {
+      clearTimeout(this.wordsTimer);
+      this.wordsTimer = window.setTimeout(() => {
+        for (const w of this.layout.windows()) this.renderWords(w);
+      }, 300);
+      return;
+    }
+    const { text, readable, words: all } = this.readableOf(state.doc);
+    const n = (count: number) => count.toLocaleString("en-US");
+    const ranges = this.selected(state);
+    const words = (count: number) => `${n(count)} word${count === 1 ? "" : "s"}`;
+    win.sl.words.textContent = ranges ? `${n(countText(text, readable, ranges).words)} of ${words(all)}` : words(all);
+  }
+
+  /** `:word-count`: the counts of the document, or of the selection, in full. */
+  private wordCount() {
+    const state = this.view.state;
+    const { text, readable } = this.readableOf(state.doc);
+    const n = (count: number) => count.toLocaleString("en-US");
+    const ranges = this.selected(state);
+    const c = countText(text, readable, ranges);
+    const parts = [`${n(c.words)} words`, `${n(c.characters)} characters (${n(c.charactersNoSpaces)} without spaces)`];
+    if (!ranges && readable.noteCount) {
+      const notes = countNotes(text, readable);
+      parts.push(`${n(notes.words)} more in ${readable.noteCount} footnote${readable.noteCount === 1 ? "" : "s"}`);
+    }
+    // At 230 words a minute, as adults read on average.
+    parts.push(`about ${Math.max(1, Math.round(c.words / 230))} min to read`);
+    this.message(`${ranges ? "selection: " : ""}${parts.join(", ")}`);
   }
 
   private renderAllStatus() {
@@ -756,6 +851,8 @@ class App implements Host {
           return this.message("the export reference, as a scratch buffer");
         case "export-docx":
           return await this.exportDocx(arg);
+        case "export-html":
+          return await this.exportDocx(arg, "html");
         case "encoding":
           if (!arg) return this.message(`encoding: ${doc.format.encoding}${doc.format.bom ? " with BOM" : ""}`);
           if (!encodings.includes(arg as Encoding)) return this.message(`encoding: ${encodings.join(", ")}`, "error");
@@ -786,6 +883,8 @@ class App implements Host {
         }
         case "history":
           return this.historyPicker();
+        case "word-count":
+          return this.wordCount();
         case "reflow": {
           const width = arg ? Number(arg) : config.textWidth;
           if (!(width > 0)) return this.message("reflow: a width in characters", "error");
@@ -1261,6 +1360,141 @@ class App implements Host {
     );
   }
 
+  // ── Links ──────────────────────────────────────────────────────────────────
+
+  /**
+   * `gf` and Cmd-click: opens what the link at `pos` (else under the
+   * cursor) points to. A markdown file opens here, at the heading its anchor
+   * names; an address, or a file this editor does not edit, opens in its app.
+   * A wiki-link finds its note by name under the workspace root; one not
+   * found yet is a new note beside the document.
+   */
+  async followLink(view: EditorView, pos?: number) {
+    const win = this.layout.windows().find((w) => w.view === view);
+    if (win && win !== this.active) this.focus(win);
+    const { state } = view;
+    const sel = state.selection.main;
+    const target = linkAt(state, pos ?? (state.field(modeField) !== "insert" && sel.head > sel.anchor ? sel.head - 1 : sel.head));
+    if (!target) return this.message("no link under the cursor", "error");
+    if (target.kind === "footnote") {
+      const text = state.doc.toString();
+      const label = target.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const m = (target.note ? new RegExp(`\\[\\^${label}\\](?!:)`) : new RegExp(`^ {0,3}\\[\\^${label}\\]:[ \\t]?`, "m")).exec(text);
+      if (!m) return this.message(target.note ? "nothing refers to this footnote" : `no note for footnote ${target.label}`, "error");
+      const at = m.index + (target.note ? 0 : m[0].length);
+      this.pushJump(view, state.selection);
+      view.dispatch({ selection: EditorSelection.cursor(at), effects: EditorView.scrollIntoView(at, { y: "center" }), userEvent: "select" });
+      return;
+    }
+    try {
+      if (target.kind === "url") return await backend.openExternal(target.url);
+      const dir = this.baseDir();
+      let path: string;
+      if (target.kind === "wiki") {
+        const root = await backend.workspaceRoot(dir).catch(() => dir);
+        const prefix = root.endsWith("/") ? root : root + "/";
+        const files = await backend.listFiles(root).catch(() => []);
+        const rel = target.name ? resolveWiki(target.name, files, dir.startsWith(prefix) ? dir.slice(prefix.length) : "") : null;
+        path = rel ? prefix + rel : target.name ? this.resolve(MARKDOWN_PATH.test(target.name) ? target.name : `${target.name}.md`) : this.active.doc.path!;
+      } else if (!target.path) {
+        // `#heading`: in this document.
+        if (!this.active.doc.path) return this.gotoAnchor(target.anchor);
+        path = this.active.doc.path;
+      } else {
+        path = this.resolve(target.path);
+        if (!/\.[^/]+$/.test(path)) path += ".md";
+      }
+      if (EXTERNAL.test(path)) return await backend.openExternal(path);
+      const here = path === this.active.doc.path;
+      if (!here) {
+        this.pushJump(this.view, this.view.state.selection);
+        await this.openPath(path);
+      }
+      this.gotoAnchor(target.anchor, here);
+    } catch (err) {
+      this.message(String(err), "error");
+    }
+  }
+
+  /** Moves to the heading `anchor` names in the current document; `jump` keeps where it was in the jumplist. */
+  private gotoAnchor(anchor: string, jump = true) {
+    if (!anchor) return;
+    const line = anchorLine(this.view.state.doc.toString(), anchor);
+    if (line === null) return this.message(`no heading #${anchor}`, "error");
+    if (jump) this.pushJump(this.view, this.view.state.selection);
+    this.selectLine(this.active, line);
+  }
+
+  // ── Global search ──────────────────────────────────────────────────────────
+
+  /**
+   * `space /`: the lines matching a regex in the files under the workspace
+   * root, as the pattern is typed. Buffers with unsaved changes are searched
+   * as they are here, not as on disk. The chosen match is selected, and
+   * becomes the pattern `n` and `N` look for.
+   */
+  async globalSearch() {
+    const base = this.baseDir();
+    const root = await backend.workspaceRoot(base).catch(() => base);
+    const dir = root.endsWith("/") ? root : root + "/";
+    // The pattern the listed matches are for.
+    let pattern = "";
+    openPicker<SearchMatch>(
+      {
+        title: `search ${this.home && root.startsWith(this.home) ? "~" + root.slice(this.home.length) : root}`,
+        items: [],
+        search: async (p) => {
+          const re = searchRegex(p);
+          const found = await backend.searchFiles(root, p);
+          pattern = p;
+          const unsaved = this.docs.filter((d) => d.path?.startsWith(dir) && this.isDirty(d));
+          if (!unsaved.length) return found;
+          const rels = new Set(unsaved.map((d) => d.path!.slice(dir.length)));
+          const here = unsaved.flatMap((d) => searchText(d.path!.slice(dir.length), this.stateOf(d).doc.toString(), re));
+          return [...found.filter((m) => !rels.has(m.path)), ...here].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line));
+        },
+        text: (m) => m.text,
+        matched: (m) => [m.from, m.to],
+        found: (n) => (n >= MAX_MATCHES ? `first ${MAX_MATCHES} matches` : n === 1 ? "1 match" : `${n} matches`),
+        prefix: (m) => `${m.path}:${m.line}`,
+        preview: async (m) => {
+          const open = this.docs.find((d) => d.path === dir + m.path);
+          if (open) return { text: this.stateOf(open).doc.toString(), line: m.line };
+          try {
+            const disk = await backend.readText(dir + m.path);
+            return { text: fromDisk(disk.text, disk.format).text, line: m.line };
+          } catch (err) {
+            return { text: String(err) };
+          }
+        },
+        onSelect: (m, how) => {
+          if (how === "replace") this.pushJump(this.view, this.view.state.selection);
+          void this.openPath(dir + m.path, how)
+            .then(() => this.selectMatch(this.active, m.line, pattern))
+            .catch((err) => this.message(String(err), "error"));
+        },
+      },
+      () => this.view.focus(),
+    );
+  }
+
+  /** Selects the first match of `pattern` on line `n`, or the line's start without one. */
+  private selectMatch(win: Win, n: number, pattern: string) {
+    const { doc } = win.view.state;
+    const line = doc.line(Math.max(1, Math.min(n, doc.lines)));
+    let m: RegExpExecArray | null = null;
+    try {
+      m = searchRegex(pattern).exec(line.text);
+    } catch {}
+    if (pattern) setSearchPattern(pattern);
+    const from = line.from + (m?.index ?? 0);
+    win.view.dispatch({
+      selection: m?.[0] ? EditorSelection.range(from, from + m[0].length) : EditorSelection.cursor(from),
+      effects: EditorView.scrollIntoView(from, { y: "center" }),
+      userEvent: "select",
+    });
+  }
+
   private gotoHeading(doc: Doc, line: number, how: OpenHow) {
     if (!this.docs.includes(doc)) return;
     this.pushJump(this.view, this.view.state.selection);
@@ -1493,6 +1727,14 @@ class App implements Host {
     const dirs = await this.styleDirs(doc);
     const styles = (await listStyles(this.styleFs, dirs)).map((e) => e.name);
 
+    // A link's target: after `[[`, or `](`.
+    if (insert && isMarkdownPath(doc.path)) {
+      const before = line.text.slice(0, head - line.from);
+      const wiki = /\[\[([^\[\]|#\n]*)$/.exec(before);
+      const link = /\]\(([^()\s]*)$/.exec(before);
+      if (wiki || link) return this.completeLink(view, head, wiki ? "wiki" : "path", (wiki ?? link)![1]);
+    }
+
     let at: (col: number) => Candidate[];
     if (doc.path && /\/styles\/[^/]+\.toml$/.test(doc.path)) {
       const text = state.doc.toString();
@@ -1516,7 +1758,7 @@ class App implements Host {
       const block = isMarkdownPath(doc.path) ? frontMatter(state.doc.sliceString(0, 20_000)) : null;
       // Between the fences: the closing one is line `endLine`.
       if (!block || line.number < 2 || line.number >= block.endLine) {
-        return this.message("no completions here: C-x completes in front matter and style files");
+        return this.message("no completions here: C-x completes links, front matter and style files");
       }
       at = (col) => propertyCompletions(line.text.slice(0, col), col, styles);
     }
@@ -1556,6 +1798,48 @@ class App implements Host {
             changes: { from: line.from + c.from, to: line.from + to, insert: c.insert },
             selection: typing ? { anchor: end } : { anchor: end - 1, head: end },
             effects: typing && !insert ? setMode.of("insert") : [],
+            userEvent: "input.complete",
+          });
+        },
+      })),
+      { left: coords?.left ?? 0, top: coords?.bottom ?? 0 },
+      () => view.focus(),
+    );
+  }
+
+  /**
+   * `C-x` after `[[` or `](`: the workspace's notes, by name for a
+   * wiki-link, or its files by path from the document's folder for a link.
+   */
+  private async completeLink(view: EditorView, head: number, kind: "wiki" | "path", typed: string) {
+    const dir = this.baseDir();
+    const root = await backend.workspaceRoot(dir).catch(() => dir);
+    const prefix = root.endsWith("/") ? root : root + "/";
+    const files = (await backend.listFiles(root).catch(() => [] as string[])).filter((f) => kind === "path" || MARKDOWN_PATH.test(f));
+    let names: string[];
+    if (kind === "wiki") {
+      // A note's name, or its path where another note has the same name.
+      const bare = files.map((f) => f.replace(MARKDOWN_PATH, ""));
+      const base = (f: string) => f.slice(f.lastIndexOf("/") + 1).toLowerCase();
+      names = bare.map((f) => (bare.filter((g) => base(g) === base(f)).length > 1 ? f : f.slice(f.lastIndexOf("/") + 1)));
+    } else names = files.map((f) => relativePath(dir, prefix + f).replace(/ /g, "%20"));
+    const own = this.active.doc.path;
+    names = names.filter((_, i) => prefix + files[i] !== own);
+    const found = fuzzyFilter(typed, names, (n) => n);
+    if (!found.length) return this.message(`no ${kind === "wiki" ? "notes" : "files"} match ${typed}`);
+    const close = kind === "wiki" ? "]]" : ")";
+    const keys = "123456789abcdefghijklmnopqrstuvwxyz";
+    const coords = view.coordsAtPos(head);
+    openMenu(
+      found.slice(0, keys.length).map((name, i) => ({
+        key: keys[i],
+        label: name,
+        action: () => {
+          const after = view.state.sliceDoc(head, head + close.length) === close ? "" : close;
+          const from = head - typed.length;
+          view.dispatch({
+            changes: { from, to: head, insert: name + after },
+            selection: { anchor: from + name.length + close.length },
             userEvent: "input.complete",
           });
         },
@@ -1605,21 +1889,33 @@ class App implements Host {
     this.message(`zoom ${Math.round(zoomLevel() * 100)}%`);
   }
 
-  async exportDocx(path?: string) {
+  /** `:export-docx`, and `:export-html` with `format` "html": next to the file, or to `path`. */
+  async exportDocx(path?: string, format: "docx" | "html" = "docx") {
     const doc = this.active.doc;
     const target = path
       ? this.resolve(path)
       : doc.path
-        ? doc.path.replace(/\.(md|markdown)$/i, "") + ".docx"
-        : await backend.pickSave("untitled.docx", "docx");
+        ? doc.path.replace(/\.(md|markdown)$/i, "") + "." + format
+        : await backend.pickSave(`untitled.${format}`, format);
     if (!target) return;
     const resolved = await this.styleOf(doc);
     if (!resolved.found) return this.message(`no export style named ${resolved.name} (:export-style lists them)`, "error");
+    const text = this.stateOf(doc).doc.toString();
+    const images = await loadImages(text, doc.path, (p) => backend.readBytes(p));
+    let size: number;
     // Loaded on first export: the docx library is most of the bundle.
-    const { markdownToDocx } = await import("./export/docx.ts");
-    const bytes = await markdownToDocx(this.stateOf(doc).doc.toString(), resolved.style);
-    await backend.writeBytes(target, bytes);
-    const done = `exported ${basename(target)} (${(bytes.length / 1024).toFixed(0)} KB) in the ${resolved.name} style`;
+    if (format === "docx") {
+      const { markdownToDocx } = await import("./export/docx.ts");
+      const bytes = await markdownToDocx(text, resolved.style, images, await rasterizeSvgs(images));
+      await backend.writeBytes(target, bytes);
+      size = bytes.length;
+    } else {
+      const { markdownToHtml } = await import("./export/html.ts");
+      const html = markdownToHtml(text, resolved.style, images);
+      await backend.writeText(target, html);
+      size = new TextEncoder().encode(html).length;
+    }
+    const done = `exported ${basename(target)} (${(size / 1024).toFixed(0)} KB) in the ${resolved.name} style`;
     if (resolved.errors.length) this.message(`${done}, skipping: ${resolved.errors.join("; ")}`, "error");
     else this.message(done);
   }
@@ -1664,6 +1960,7 @@ if (config.readHelixConfig) {
 const themeError = await initTheme(config.theme);
 if (themeError) startupErrors.push(themeError);
 initZoom();
+setImageReader((path) => backend.readBytes(path));
 const app = new App();
 await app.init();
 const recovered = await app.restoreRecovered();
@@ -1681,7 +1978,7 @@ function reviewOriginal(state: EditorState): Text | null {
 function reviewHint(changes: number): string {
   if (!changes) return "no changes";
   const n = `${changes} change${changes > 1 ? "s" : ""}`;
-  return `${n} to review (]g goes to the next, space d a accepts, space d r rejects, u undoes all)`;
+  return `${n} to review (]g goes to the next, space g a accepts, space g r rejects, u undoes all)`;
 }
 
 /** Says once which Helix bindings were left out, and again only when that changes. */

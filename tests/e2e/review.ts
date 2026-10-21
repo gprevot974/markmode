@@ -66,15 +66,15 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   await type("gg]g");
   check("]g selects the first change", (await selected()) === "Second paragraph has changed.", await selected());
   check("and says where it is", (await message()) === "change 1 of 3", await message());
-  await type(" dr");
-  check("space d r brings back the text from before", (await text()).includes("Second paragraph will change."), await text());
+  await type(" gr");
+  check("space g r brings back the text from before", (await text()).includes("Second paragraph will change."), await text());
   check("which leaves the buffer modified", (await count(".sl-file.dirty")) === 1);
 
   await type("]g");
   // A deletion: the cursor goes on the line after it.
   check("]g goes on to the next change", (await selected()) === "F" && (await message()) === "change 1 of 2", await selected());
-  await type(" da");
-  check("space d a keeps it", !(await text()).includes("Fourth paragraph") && (await message()).includes("1 left"), await message());
+  await type(" ga");
+  check("space g a keeps it", !(await text()).includes("Fourth paragraph") && (await message()).includes("1 left"), await message());
 
   // Typing during a review is not taken for a change.
   await type("ggA");

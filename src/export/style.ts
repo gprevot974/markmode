@@ -66,6 +66,7 @@ export const FIELDS: Field[] = [
   f("sizes", "subheading", "size", "`###` headings and below"),
   f("sizes", "table", "size", "Table text"),
   f("sizes", "metadata", "size", "Metadata blocks (see rules.metadata-blocks)"),
+  f("sizes", "footnote", "size", "Footnotes"),
   f("sizes", "footer", "size", "The footer"),
 
   f("colors", "text", "color", "Body text, and bold in the middle of a sentence"),
@@ -119,6 +120,7 @@ const DEFAULT: ExportStyle = {
   "sizes.subheading": 11.5,
   "sizes.table": 9.5,
   "sizes.metadata": 10,
+  "sizes.footnote": 8.5,
   "sizes.footer": 8,
 
   "colors.text": "1F2328",

@@ -2,7 +2,7 @@
 // hidden, except on lines that hold a selection, which show their raw source
 // so every character stays reachable by Helix motions.
 
-import { type EditorState, type Range as DecoRange, RangeSet, StateEffect, StateField } from "@codemirror/state";
+import { type EditorState, type Range as DecoRange, RangeSet, StateEffect, StateField, type Text } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import {
@@ -18,6 +18,9 @@ import {
 import { type CellLabel, measureColumns, renderTableLine, splitRow } from "./table.ts";
 import { describeDirective, fitWidths, parseDirective, parseWidths, widthsDirective, widthsLineAbove } from "../directives.ts";
 import { PROPERTIES } from "../frontmatter.ts";
+import { documentPath, imageUrl } from "../images.ts";
+import { footnoteLabel, footnoteNumbers } from "./footnoteSyntax.ts";
+import { MathWidget, mathBlocks, texOf } from "./math.ts";
 
 /**
  * One-based numbers of lines touched by a selection. A range's end is
@@ -39,20 +42,38 @@ const hide = Decoration.replace({});
 class TextWidget extends WidgetType {
   readonly text: string;
   readonly cls: string;
-  constructor(text: string, cls: string) {
+  readonly title: string;
+  constructor(text: string, cls: string, title = "") {
     super();
     this.text = text;
     this.cls = cls;
+    this.title = title;
   }
   eq(other: TextWidget) {
-    return other.text === this.text && other.cls === this.cls;
+    return other.text === this.text && other.cls === this.cls && other.title === this.title;
   }
   toDOM() {
     const span = document.createElement("span");
     span.className = this.cls;
     span.textContent = this.text;
+    if (this.title) span.title = this.title;
     return span;
   }
+}
+
+// Footnotes are numbered in the order they are first referred to, as in the export.
+const footnoteCache = new WeakMap<Text, { numbers: Map<string, number>; notes: Map<string, string> }>();
+
+function footnotesOf(doc: Text) {
+  let found = footnoteCache.get(doc);
+  if (!found) {
+    const text = doc.toString();
+    const notes = new Map<string, string>();
+    for (const m of text.matchAll(/^ {0,3}\[\^([^\]\s]+)\]:[ \t]?(.*)$/gm)) notes.set(m[1], m[2]);
+    found = { numbers: footnoteNumbers(text), notes };
+    footnoteCache.set(doc, found);
+  }
+  return found;
 }
 
 // ── Export rules ─────────────────────────────────────────────────────────────
@@ -96,24 +117,30 @@ const PROPERTY_LABELS: Record<string, string> = {
   style: "Export style",
 };
 
+const propertyLabel = (key: string) => PROPERTY_LABELS[key] ?? key;
+
 /** A front matter line, as shown when the cursor is elsewhere: a label and its value. */
 class PropertyWidget extends WidgetType {
   readonly key: string;
   readonly value: string;
-  constructor(key: string, value: string) {
+  /** The longest label of the front matter, in characters: the labels' column is that wide. */
+  readonly column: number;
+  constructor(key: string, value: string, column: number) {
     super();
     this.key = key;
     this.value = value;
+    this.column = column;
   }
   eq(other: PropertyWidget) {
-    return other.key === this.key && other.value === this.value;
+    return other.key === this.key && other.value === this.value && other.column === this.column;
   }
   toDOM() {
     const span = document.createElement("span");
     span.className = "md-property";
     const key = span.appendChild(document.createElement("span"));
     key.className = "md-property-key";
-    key.textContent = PROPERTY_LABELS[this.key] ?? this.key;
+    key.textContent = propertyLabel(this.key);
+    key.style.minWidth = `calc(${this.column}ch + 1.5em)`;
     if (!PROPERTIES.some((p) => p.key === this.key)) key.title = "Not used by this editor";
     const value = span.appendChild(document.createElement("span"));
     value.className = "md-property-value";
@@ -121,6 +148,47 @@ class PropertyWidget extends WidgetType {
     return span;
   }
 }
+
+/** An image, shown in its place; the source stays editable on the cursor's line, above it. */
+class ImageWidget extends WidgetType {
+  readonly src: string;
+  readonly alt: string;
+  readonly base: string | null;
+  constructor(src: string, alt: string, base: string | null) {
+    super();
+    this.src = src;
+    this.alt = alt;
+    this.base = base;
+  }
+  eq(other: ImageWidget) {
+    return other.src === this.src && other.alt === this.alt && other.base === this.base;
+  }
+  toDOM(view: EditorView) {
+    const box = document.createElement("span");
+    box.className = "md-image";
+    const img = box.appendChild(document.createElement("img"));
+    img.alt = this.alt;
+    img.title = this.alt;
+    // The line grows when the image arrives: measure it again then.
+    img.onload = () => view.requestMeasure();
+    img.onerror = () => this.missing(box, view);
+    imageUrl(this.src, this.base).then(
+      (url) => (img.src = url),
+      () => this.missing(box, view),
+    );
+    return box;
+  }
+  private missing(box: HTMLElement, view: EditorView) {
+    box.className = "md-image md-image-missing";
+    box.textContent = `${this.alt || "image"} (${this.src} not found)`;
+    view.requestMeasure();
+  }
+  get estimatedHeight() {
+    return 200;
+  }
+}
+
+const propertiesCaption = Decoration.replace({ widget: new TextWidget("Properties", "md-fm-caption") });
 
 const bullet = Decoration.replace({ widget: new TextWidget("•", "md-bullet") });
 const taskOpen = Decoration.replace({ widget: new TextWidget("☐", "md-task") });
@@ -132,6 +200,7 @@ const MARKS: Record<string, string> = {
   Strikethrough: "md-strike",
   InlineCode: "md-code",
   Link: "md-link",
+  WikiLink: "md-link",
   Autolink: "md-link",
   URL: "md-url",
   CommentBlock: "md-comment",
@@ -165,6 +234,8 @@ function buildInline(view: EditorView): DecorationSet {
         }
         // Front matter: each line a property, shown as a label and its value.
         if (name === "FrontMatter") {
+          const keys = [...doc.sliceString(node.from, node.to).matchAll(/^([A-Za-z][\w-]*)\s*:/gm)].map((m) => m[1]);
+          const column = Math.max(0, ...keys.map((k) => propertyLabel(k).length));
           for (let pos = node.from; pos <= node.to; ) {
             const line = doc.lineAt(pos);
             const edge = pos === node.from ? " md-fm-first" : line.to >= node.to ? " md-fm-last" : "";
@@ -172,8 +243,10 @@ function buildInline(view: EditorView): DecorationSet {
             decos.push(Decoration.line({ class: `md-frontmatter${edge}` }).range(line.from));
             const field = /^([A-Za-z][\w-]*)\s*:\s*(.*?)\s*$/.exec(line.text);
             if (!isActive(pos) && line.length) {
-              if (fence) decos.push(hide.range(line.from, line.to));
-              else if (field) decos.push(Decoration.replace({ widget: new PropertyWidget(field[1], field[2]) }).range(line.from, line.to));
+              // The opening fence names the card; the closing one just ends it.
+              if (fence && pos === node.from) decos.push(propertiesCaption.range(line.from, line.to));
+              else if (fence) decos.push(hide.range(line.from, line.to));
+              else if (field) decos.push(Decoration.replace({ widget: new PropertyWidget(field[1], field[2], column) }).range(line.from, line.to));
             }
             pos = line.to + 1;
           }
@@ -187,6 +260,36 @@ function buildInline(view: EditorView): DecorationSet {
             const lines = [];
             for (let n = first.number; n <= last.number; n++) lines.push(doc.line(n));
             if (lines.every((l) => META.test(l.text))) for (const l of lines) decos.push(Decoration.line({ class: "md-meta" }).range(l.from));
+          }
+        }
+        // Math in a line of text: typeset, but for on the cursor's line.
+        if (name === "InlineMath") {
+          if (isActive(node.from)) decos.push(Decoration.mark({ class: "md-math-source" }).range(node.from, node.to));
+          else {
+            const source = doc.sliceString(node.from, node.to);
+            decos.push(Decoration.replace({ widget: new MathWidget(texOf(source), source.startsWith("$$")) }).range(node.from, node.to));
+          }
+          return false;
+        }
+        if (name === "BlockMath") return false;
+        // Footnotes: a reference shows as its number, its note's label as the number too.
+        if (name === "FootnoteRef" || name === "FootnoteLabel") {
+          const ref = name === "FootnoteRef";
+          const label = footnoteLabel(doc.sliceString(node.from, node.to));
+          const { numbers, notes } = footnotesOf(doc);
+          const n = numbers.get(label);
+          if (isActive(node.from)) decos.push(Decoration.mark({ class: ref ? "md-footnote-ref" : "md-footnote-label" }).range(node.from, node.to));
+          else {
+            const widget = new TextWidget(n ? String(n) : label, ref ? "md-footnote-ref" : "md-footnote-label", ref ? (notes.get(label) ?? "no note for this footnote") : "");
+            decos.push(Decoration.replace({ widget }).range(node.from, node.to));
+          }
+          return false;
+        }
+        if (name === "FootnoteDefinition") {
+          for (let pos = node.from; pos <= node.to; ) {
+            const line = doc.lineAt(pos);
+            decos.push(Decoration.line({ class: "md-footnote" }).range(line.from));
+            pos = line.to + 1;
           }
         }
         // Directives (`<!-- footer: ... -->`) show as labels.
@@ -227,6 +330,20 @@ function buildInline(view: EditorView): DecorationSet {
             }
             return;
           }
+          case "Image": {
+            const url = node.node.getChild("URL");
+            if (!url) break;
+            const src = doc.sliceString(url.from, url.to);
+            const [open, close] = node.node.getChildren("LinkMark");
+            const alt = close ? doc.sliceString(open.to, close.from) : "";
+            const widget = new ImageWidget(src, alt, state.facet(documentPath));
+            if (isActive(node.from)) {
+              decos.push(Decoration.widget({ widget, side: 1 }).range(node.to));
+              break;
+            }
+            decos.push(Decoration.replace({ widget }).range(node.from, node.to));
+            return false;
+          }
           case "HorizontalRule":
             decos.push(Decoration.line({ class: "md-hr" }).range(doc.lineAt(node.from).from));
             if (!isActive(node.from)) decos.push(hide.range(node.from, node.to));
@@ -256,6 +373,9 @@ function buildInline(view: EditorView): DecorationSet {
           case "LinkTitle":
           case "LinkLabel":
             if (parent === "Link" || parent === "Image") decos.push(hide.range(node.from, node.to));
+            break;
+          case "WikiLinkMark":
+            decos.push(hide.range(node.from, node.to));
             break;
           case "QuoteMark": {
             const end = doc.sliceString(node.to, node.to + 1) === " " ? node.to + 1 : node.to;
@@ -581,4 +701,4 @@ const gutterClasses = StateField.define<RangeSet<GutterMarker>>({
   provide: (f) => gutterLineClass.from(f),
 });
 
-export const livePreview = [previewLabels, totalRows, inlinePreview, tablePreview, gutterClasses];
+export const livePreview = [previewLabels, totalRows, inlinePreview, tablePreview, mathBlocks, gutterClasses];

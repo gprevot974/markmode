@@ -10,8 +10,10 @@ working on, read it rendered, edit it the Helix way, and export a formatted
   cursors, text objects, surround, jump labels, registers and counts. Your
   `~/.config/helix/config.toml` applies: key remaps, theme and editor options
   (see [Helix config](#helix-config)).
-- **Live preview**: markdown renders in place. Lines holding a selection show their
-  raw source, so every character stays reachable.
+- **Live preview**: markdown renders in place, images, footnotes and math
+  (KaTeX) included. Lines holding a selection show their raw source, so every
+  character stays reachable. Links and wiki-links open with `gf` (see
+  [Links, images, footnotes and math](#links-images-footnotes-and-math)).
 - **Made for working with agents**: when another program (an LLM agent, a script,
   git) changes the open file, its changes show inline, to accept or reject one by
   one (see [Reviewing outside changes](#reviewing-outside-changes)). Comments
@@ -66,6 +68,7 @@ node scripts/build-docx.ts input.md [output.docx] [--style name]
 | `:zoom [in\|out\|reset\|percent]` | text size |
 | `:table-widths [widths\|reset]` | set the column widths of the table at the cursor (see [Export](#export)) |
 | `:reflow [width]` | hard-wrap the selected lines, or the paragraph at the cursor, to `text-width` (80) |
+| `:word-count` (`:wc`) | words, characters, footnote words and reading time, of the selection or the document |
 | `:config-open` | open your Helix config.toml |
 | `:export-docx [path]` | export to Word |
 | `:export-style [name\|reset]`, `:export-style-default [name]` | pick the document's export style; the one for documents naming none |
@@ -84,8 +87,9 @@ Normal and select mode (`v`) follow Helix: `hjkl`, `w b e W B E`, `f t F T`, `A-
 `_`, `/ ? n N *`, `y p P R`, `d c A-d A-c`, `r ~ \` A-\``, `> <`, `J`, `u U`,
 `mi ma mm ms mr md`, `zz zt zb zj zk`, `C-u C-d C-b C-f`, `[space ]space`,
 `space y/p/P/R/e`, `]g [g ]G [G` (changes under review). Counts work (`3w`,
-`5j`, `12G`). Additions for this editor: `space d` (deciding on changes),
-`space c`, `space C`, `]c`, `[c` (comments) and `space h` (version history).
+`5j`, `12G`). Additions for this editor: `space g` (deciding on changes),
+`space c`, `space C`, `]c`, `[c` (comments), `space h` (version history) and
+`gf` on links (Helix's goto file).
 
 ### Moving around prose
 
@@ -106,6 +110,10 @@ change with the window width:
 
 There are no line numbers in the margin; the statusline shows the cursor's
 `line:column`. `gutters = ["line-numbers"]` in config.toml brings them back.
+Beside it is the word count: the document's, or with a selection, "12 of
+1,234 words". It counts what a reader sees, as the export does: markup, link
+targets, front matter, comments, math and footnotes are left out (`:word-count`
+gives the footnotes' words, characters and reading time).
 To find your way in a long file:
 
 - `space s` lists the headings of the file as an indented outline, to type a
@@ -113,11 +121,46 @@ To find your way in a long file:
   and each space-separated word may match one of them (`setup conf`).
   `space S` does the same for every markdown file in the workspace (where
   `space f` looks), each file with its headings under it.
+- `space /` searches every file in the workspace for a regex as you type it,
+  as Helix's global search does: smart case, hidden and git-ignored files left
+  out, and unsaved buffers searched as they are here. Enter opens the file at
+  the match, selected, and the pattern becomes the one `n` and `N` look for.
 - The jumplist works as in Helix: `gg`, `ge`, `G`, searches, `n`/`N`, `gw`,
   `]g`/`[g`, `]c`/`[c`, the pickers and switching files are jumps; `C-o` goes
   back to where you jumped from and `C-i` (or Tab) forward again. `C-s` saves
   the current place, and `space j` lists the places. Each window has its own
   list, and the places move with the text as it is edited.
+
+### Links, images, footnotes and math
+
+- **Links**: `gf` (or Cmd-click) on a link opens what it points to: a markdown
+  file here, at the heading its `#anchor` names (GitHub's anchors, or the
+  heading's text); `#anchor` alone moves within the file; a web address, an
+  image or a PDF opens in its own app. The bare path under the cursor works
+  too, as in Helix. `C-o` comes back.
+- **Wiki-links**: `[[note]]`, `[[note#Heading]]` and `[[note|shown text]]`
+  show as links. `gf` finds the note by name anywhere under the workspace
+  root, nearest first; a note not written yet opens as a new file beside the
+  document. In insert mode, `C-x` after `[[` lists the notes, and after `](`
+  the files, by path from the document.
+- **Images**: `![description](path)` shows the image in its place, from a
+  path relative to the document or a web address. On the cursor's line the
+  source shows above it.
+- **Footnotes**: `[^label]` shows as the note's number (numbered in the order
+  they are first referred to) with the note as a tooltip, and the note,
+  `[^label]: text`, in smaller type. `gf` goes from one to the other.
+- **Math**: `$x^2$` in a line and `$$ ... $$` blocks are typeset with KaTeX.
+  A dollar followed by a space, or a closing one followed by a digit, is not
+  math, so prices stay prices. TeX that does not parse shows underlined, with
+  KaTeX's error as its tooltip.
+
+The exports carry them over. In the docx, links keep their text (a web address stays a
+link), images are placed at their size up to the page's width (an SVG with a
+PNG copy, for programs that cannot show SVG), footnotes become Word footnotes,
+and math becomes typeset Word equations. The web page keeps links as links,
+holds its images, sets footnotes at the end and typesets math. Both read the
+markdown with the editor's parser, so quotes, code blocks, strikethrough and
+nested lists come through too; raw HTML is left out of the docx.
 
 ## Reviewing outside changes
 
@@ -130,9 +173,9 @@ Then, as with Helix's diff gutter:
 
 - `]g` / `[g` go to the next / previous change and select it, `]G` / `[G` to
   the last / first; the message line says "change 2 of 5".
-- `space d a` accepts the changes under the selections (they stay and lose
-  their highlight), `space d r` rejects them (the text from before comes back),
-  `space d A` / `space d R` decide on all of them. The Accept and Reject buttons
+- `space g a` accepts the changes under the selections (they stay and lose
+  their highlight), `space g r` rejects them (the text from before comes back),
+  `space g A` / `space g R` decide on all of them. The Accept and Reject buttons
   in the margin beside each change do the same, and so do `:accept-all-changes`,
   `:reject-all-changes` and Helix's `:reset-diff-change` (`:diffget`).
 - `u` undoes the whole outside change at once.
@@ -245,9 +288,11 @@ to the dictionary, `i` ignores it until the app quits). Turn it off with
 ## Buffers and windows
 
 As in Helix, every file you open stays open as a buffer. `space f` opens the
-file picker on the workspace (the nearest folder above the current file that
-holds `.git`), `space F` on the current file's folder, and `space b` the buffer
-picker. In a picker, type to fuzzy-filter, Enter opens, `C-s` / `C-v` open in a
+file picker on the workspace, `space F` on the current file's folder, and `space b` the buffer
+picker. The workspace is the nearest folder at or above the current file that
+holds `.git` or `.helix`, or else the file's own folder; with no file open, the
+folder the app was started in, or your home folder when started from the Finder.
+`space S` and `space /` search the same place, which their title shows. In a picker, type to fuzzy-filter, Enter opens, `C-s` / `C-v` open in a
 horizontal / vertical split. `ga` goes back to the last buffer, `gn` / `gp`
 cycle through them.
 
@@ -260,16 +305,16 @@ Closing the window, ⌘W or ⌘Q with unsaved buffers asks whether to save them.
 on the same buffer edit the same text, but undo is per window: `u` undoes the
 edits made in that window.
 
-Pressing `g`, `m`, `z`, `[`, `]`, `space`, `space d`, `C-w`, `mi` or `ma` shows Helix's which-key popup.
+Pressing `g`, `m`, `z`, `[`, `]`, `space`, `space g`, `C-w`, `mi` or `ma` shows Helix's which-key popup.
 `:` completes command names, showing each one's doc; Tab and Shift-Tab cycle,
 and `:o`, `:w` and `:export-docx` complete file paths: Enter on a folder lists
 what is inside it, Enter on a file runs the command. `/`, `?`, `s` and `S`
 preview their result as you type, and Esc restores the selection.
 
 Insert mode keeps CodeMirror's editing (with the macOS Emacs keys) and adds
-`C-w`, `C-u` and `jk`, and `C-x`, which completes keys and values in front
-matter and export styles (in normal mode too, where Helix has decrement, which
-this editor lacks). Pressing Enter in a list continues it.
+`C-w`, `C-u` and `jk`, and `C-x`, which completes link targets after `[[` and
+`](`, and keys and values in front matter and export styles (in normal mode
+too, where Helix has decrement, which this editor lacks). Pressing Enter in a list continues it.
 
 Files other than markdown (an export style, config.toml) open as plain text,
 highlighted, without the preview.
@@ -280,8 +325,13 @@ for every command.
 
 ## Export
 
-`:export-docx` writes a Word document. What it looks like comes from an
-**export style**; what it says about itself (title, author, footer) comes from
+`:export-docx` writes a Word document, and `:export-html` a web page in the
+same style: one file, images included, math as MathML. Printing the page from
+a browser gives a PDF on the style's paper, with its margins and its footer and
+page numbers, a second way to a PDF besides saving one from Word. Turn off
+the browser's own headers and footers in its print dialog (Chrome: More
+settings → Headers and footers; Safari: Print headers and footers): a page
+cannot turn them off itself, and the browser remembers the choice. What both look like comes from an **export style**; what it says about itself (title, author, footer) comes from
 the document's front matter. `:export-preview` shows each document as its
 style looks, on a page of its width, and keeps up as you edit the document or
 the style. `:export-help` opens this reference in the editor.
@@ -344,6 +394,8 @@ A document uses the style named by `style:` in its front matter. Without one, it
 
 | Command | What it does |
 | --- | --- |
+| `:export-docx` | Write the Word document, next to the file or to the path given |
+| `:export-html` | Write a standalone web page in the same style, images included; print it from a browser for a PDF on the style's page |
 | `:export-style` | Pick the document's style, seeing each in the window as you move through them, or name it (`reset` removes it) |
 | `:export-style-default` | Show or set the style for documents without one, in `~/.config/md-editor/config.toml` |
 | `:export-style-new <name>` | Start a style from the document's style, with every key commented out; `project` after the name puts it in the project |
@@ -400,6 +452,7 @@ Font sizes, in points.
 | `subheading` | `11.5` | `###` headings and below |
 | `table` | `9.5` | Table text |
 | `metadata` | `10` | Metadata blocks (see rules.metadata-blocks) |
+| `footnote` | `8.5` | Footnotes |
 | `footer` | `8` | The footer |
 
 #### [colors]
@@ -447,12 +500,17 @@ src/review.ts     reviewing outside changes inline (with the prose diff of src/d
 src/comments.ts   comments in CriticMarkup (parsing in src/criticmarkup.ts)
 src/history.ts    the version history picker
 src/outline.ts    headings, for the heading pickers
+src/search.ts     space /: global search (the files on disk are searched by src-tauri/src/search.rs)
+src/links.ts      following links and wiki-links (gf)
+src/images.ts     images: paths, loading, sizes
 src/jumplist.ts   the jumplist (C-o, C-i)
 src/reflow.ts     :reflow
+src/wordCount.ts  word counts: the text a reader sees
 src/frontmatter.ts  front matter: the document's properties
 src/directives.ts directives: table widths (and the older footer, author...)
-src/preview/      live preview decorations and table rendering
-src/export/       markdown → docx, export styles (style.ts: every key), their files and reference
+src/preview/      live preview decorations, table rendering, and the syntax added to markdown:
+                  front matter, wiki-links, footnotes, math (math.ts, with KaTeX)
+src/export/       markdown → docx and → html, export styles (style.ts: every key), their files and reference
 src/theme/        Kanagawa, Helix themes, light and dark
 src/helixConfig.ts  reading ~/.config/helix/config.toml
 src/fileformat.ts line endings and encodings
@@ -473,12 +531,14 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 The unit tests cover the ported Helix motions and text objects, the docx
 output, export styles, front matter, line endings, Helix themes and config, the prose diff, CriticMarkup,
-the history preview, reflow, headings and the jumplist. The browser tests run the
+the history preview, reflow, headings, the jumplist, global search, links,
+images, footnotes, math and the HTML export. The browser tests run the
 editor in Chrome against the in-memory backend with real key presses: live
 preview, windows, buffers, pickers, spelling, themes, line endings, crash
 recovery (a page reload stands in for a restart), reviewing outside changes
 (across two windows too), comments, version history, zoom, moving by rows,
-`o`/`O`, the heading pickers, the jumplist, export styles and the export preview, and a
+`o`/`O`, the heading pickers, the jumplist, export styles and the export
+preview, the HTML export, global search, following links, images, footnotes, math, and a
 120,000-line file, with timings. They use the installed Chrome, or
-`CHROME_PATH`. The Rust tests cover encodings, atomic writes and the version
-history. CI runs all three on macOS.
+`CHROME_PATH`. The Rust tests cover encodings, atomic writes, the version
+history and global search. CI runs all three on macOS.

@@ -45,7 +45,7 @@ export function applyExportLook(el: HTMLElement, style: ExportStyle | null) {
     }
     const body = style["sizes.body"] as number;
     // Sizes relative to the body text, which keeps the editor's size (and zoom).
-    for (const name of ["title", "subtitle", "heading", "subheading", "table", "metadata"]) {
+    for (const name of ["title", "subtitle", "heading", "subheading", "table", "metadata", "footnote"]) {
       vars[`--x-${name}-size`] = `${(style[`sizes.${name}`] as number) / body}em`;
     }
     const inches = PAGE_WIDTH[style["page.size"] as keyof typeof PAGE_WIDTH] - (style["page.margin-left"] as number) - (style["page.margin-right"] as number);

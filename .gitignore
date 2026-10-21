@@ -3,6 +3,6 @@ dist/
 src-tauri/target/
 src-tauri/gen/schemas/
 *.docx
-!examples/*.docx
+examples/*.html
 .DS_Store
 .zvec-grep/

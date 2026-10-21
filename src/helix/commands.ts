@@ -79,6 +79,10 @@ export interface Host {
   historyPicker(): void;
   /** `space s`: the headings of the document; `space S`: of the markdown files around it. */
   headingPicker(workspace: boolean): void;
+  /** `gf`: opens what the link under the cursor points to. */
+  followLink(view: EditorView): void;
+  /** `space /`: a regex search of the files under the workspace root. */
+  globalSearch(): void;
   /** Keeps `before`, the selection a jump in `view` left, in its jumplist. */
   pushJump(view: EditorView, before: EditorSelection): void;
   jumpBackward(count: number): void;
@@ -195,6 +199,11 @@ function selectedLines(view: EditorView): number[] {
 // ── Registers ────────────────────────────────────────────────────────────────
 
 const registers = new Map<string, string[]>();
+
+/** Makes `pattern` the one `n` and `N` search for, as `/` does. */
+export function setSearchPattern(pattern: string) {
+  registers.set("/", [pattern]);
+}
 let lastMotion: Command | null = null;
 
 function remember(motion: Command): Command {
@@ -1050,6 +1059,8 @@ export const commands: Record<string, Command> = {
   jumplist_picker: ({ host }) => host.jumplistPicker(),
   completion: ({ host, view }) => host.complete(view),
 
+  global_search: ({ host }) => host.globalSearch(),
+  goto_file: ({ view, host }) => host.followLink(view),
   file_picker: ({ host }) => host.filePicker(false),
   file_picker_in_current_directory: ({ host }) => host.filePicker(true),
   buffer_picker: ({ host }) => host.bufferPicker(),

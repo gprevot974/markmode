@@ -28,6 +28,15 @@ export interface PickerOptions<T> {
    * space-separated pattern may match an item or the items it is under.
    */
   tree?: { depth(item: T): number; parent(item: T): T | null };
+  /**
+   * Items found for the pattern, asked again as it changes, in place of
+   * filtering `items` (global search). A rejection shows as the count.
+   */
+  search?(pattern: string): Promise<T[]>;
+  /** With `search`: what the count says for `n` items found. */
+  found?(n: number): string;
+  /** With `search`: the part of `text(item)` that matched, to highlight. */
+  matched?(item: T): [number, number];
   /** A class for an item's row. */
   rowClass?(item: T): string;
   onSelect(item: T, how: OpenHow): void;
@@ -80,7 +89,38 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   const rowHeight = () => (list.firstElementChild as HTMLElement | null)?.offsetHeight || 22;
   const pageSize = () => Math.max(1, Math.floor(list.clientHeight / rowHeight()));
 
+  let searchGen = 0;
+  let searchTimer: number | undefined;
+
+  function search() {
+    clearTimeout(searchTimer);
+    const gen = ++searchGen;
+    loading = true;
+    render();
+    searchTimer = window.setTimeout(async () => {
+      const pattern = input.value;
+      let items: T[] = [];
+      let error = "";
+      try {
+        if (pattern) items = await opts.search!(pattern);
+      } catch (err) {
+        error = String(err).replace(/^Error: /, "");
+      }
+      if (gen !== searchGen) return;
+      loading = false;
+      all = rows = items.map((item) => {
+        const [from, to] = opts.matched?.(item) ?? [0, 0];
+        return { item, text: opts.text(item), indices: Array.from({ length: to - from }, (_, i) => from + i) };
+      });
+      selected = 0;
+      top = 0;
+      render();
+      if (error) count.textContent = error;
+    }, 150);
+  }
+
   function filter() {
+    if (opts.search) return search();
     const pattern = input.value;
     if (!pattern.trim()) rows = all;
     else if (opts.tree) return filterTree(opts.tree, pattern);
@@ -147,7 +187,8 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   }
 
   function render() {
-    count.textContent = loading ? "…" : `${rows.length}/${all.length}`;
+    // A search lists what it found; there is no whole list it was filtered from.
+    count.textContent = loading ? "…" : opts.search ? (opts.found?.(rows.length) ?? String(rows.length)) : `${rows.length}/${all.length}`;
     const page = pageSize();
     if (selected < top) top = selected;
     if (selected >= top + page) top = selected - page + 1;
@@ -273,6 +314,10 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
 
   input.focus();
   render();
+  if (opts.search) {
+    loading = false;
+    return render();
+  }
   void Promise.resolve(opts.items).then(
     (items) => {
       loading = false;

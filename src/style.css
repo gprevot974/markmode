@@ -381,6 +381,75 @@ body {
   color: var(--fg-dim) !important;
   font-style: normal;
 }
+/* Footnotes: references as superscript numbers, notes in smaller type. */
+.md-footnote-ref {
+  font-family: var(--ui-font);
+  font-size: 0.7em;
+  vertical-align: super;
+  line-height: 0;
+  color: var(--link);
+  padding: 0 0.1em;
+}
+.md-footnote {
+  font-size: 0.85em;
+  color: var(--fg-muted);
+}
+.md-footnote-label {
+  font-family: var(--ui-font);
+  font-size: 0.8em;
+  color: var(--link);
+  margin-right: 0.5em;
+}
+
+/* Math (preview/math.ts): typeset by KaTeX; the source in code colors while edited. */
+.md-math-source {
+  font-family: var(--mono-font);
+  font-size: 0.88em;
+  color: var(--code);
+}
+.md-math-block {
+  padding: 0.3em 0;
+  overflow-x: auto;
+}
+/* Typeset math and images are not text: the browser's selection, which
+   reaches across them next to the cursor, does not paint them (as for review chunks). */
+.md-math,
+.md-image {
+  user-select: none;
+}
+.md-math::selection,
+.md-math ::selection,
+.md-image::selection,
+.md-image ::selection {
+  background: transparent;
+}
+.md-math-error {
+  font-family: var(--mono-font);
+  font-size: 0.88em;
+  color: var(--red);
+  text-decoration: underline wavy var(--red);
+}
+
+/* Images (an inline widget, shown on a line of their own). */
+.md-image {
+  display: block;
+  margin: 0.4em 0;
+}
+.md-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 32em;
+  border-radius: 4px;
+}
+.md-image-missing {
+  font-family: var(--ui-font);
+  font-size: 0.8em;
+  color: var(--fg-dim);
+  border: 1px dashed var(--bg-raised);
+  border-radius: 4px;
+  padding: 0.3em 0.6em;
+  display: inline-block;
+}
 .md-hr {
   border-bottom: 1px solid var(--bg-raised);
   line-height: 0.8;
@@ -484,25 +553,39 @@ body {
   color: var(--link);
 }
 
-/* Front matter (frontmatter.ts): the document's properties, as a card. */
-/* Its lines keep the text's height, so line numbers stay in line. */
+/* Front matter (frontmatter.ts): the document's properties, as an outlined
+   card captioned "Properties", so it reads as a form rather than a quote.
+   Its lines keep the text's height, so line numbers stay in line; the
+   outline is drawn inside them for the same reason. */
 .md-frontmatter {
+  --fm-edge: var(--bg-raised);
   background: var(--bg-dim);
   color: var(--fg-dim);
+  font-style: normal;
+  box-shadow: inset 1px 0 var(--fm-edge), inset -1px 0 var(--fm-edge);
 }
 .md-fm-first {
   border-radius: 6px 6px 0 0;
+  box-shadow: inset 1px 0 var(--fm-edge), inset -1px 0 var(--fm-edge), inset 0 1px var(--fm-edge);
 }
 .md-fm-last {
   border-radius: 0 0 6px 6px;
+  box-shadow: inset 1px 0 var(--fm-edge), inset -1px 0 var(--fm-edge), inset 0 -1px var(--fm-edge);
+}
+.md-fm-caption {
+  font-family: var(--ui-font);
+  font-size: 0.7em;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
 }
 .md-property {
   font-family: var(--ui-font);
   font-size: 0.8em;
 }
 .md-property-key {
+  /* Its width, the longest label's, is set on it. */
   display: inline-block;
-  min-width: 7.5em;
   color: var(--fg-dim);
 }
 .md-property-value {
@@ -582,6 +665,13 @@ body {
 }
 .export-preview.x-bold-labels .md-lead {
   color: var(--x-label);
+}
+/* Task boxes, open and checked, in the accent color, as the exports draw them. */
+.export-preview .md-task-done {
+  color: var(--x-accent);
+}
+.export-preview .md-footnote {
+  font-size: var(--x-footnote-size);
 }
 .export-preview.x-metadata-blocks .md-meta {
   font-size: var(--x-metadata-size);

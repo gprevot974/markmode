@@ -60,7 +60,7 @@ function reviewExtension(original: Text): Extension {
         const button = document.createElement("button");
         button.className = `review-${type}`;
         button.textContent = type === "accept" ? "Accept" : "Reject";
-        button.title = type === "accept" ? "space d a" : "space d r";
+        button.title = type === "accept" ? "space g a" : "space g r";
         button.onmousedown = (e) => {
           e.preventDefault();
           const view = EditorView.findFromDOM(button.closest<HTMLElement>(".cm-editor")!);

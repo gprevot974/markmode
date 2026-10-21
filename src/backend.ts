@@ -9,7 +9,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { message as messageDialog, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import sample from "../examples/sample.md?raw";
+import chart from "../examples/chart.svg?raw";
 import type { DiskFormat } from "./fileformat.ts";
+import { MAX_MATCHES, searchRegex, searchText, type SearchMatch } from "./search.ts";
 
 export interface Backend {
   /** A text file and the encoding it was found in. */
@@ -17,8 +19,10 @@ export interface Backend {
   /** Writes atomically: a crash midway leaves the old file, never half of the new one. */
   writeText(path: string, contents: string, format?: DiskFormat): Promise<void>;
   writeBytes(path: string, bytes: Uint8Array): Promise<void>;
+  /** A file's bytes: images, for the preview and the export. */
+  readBytes(path: string): Promise<Uint8Array>;
   pickOpen(): Promise<string | null>;
-  pickSave(defaultPath: string, ext: "md" | "docx"): Promise<string | null>;
+  pickSave(defaultPath: string, ext: "md" | "docx" | "html"): Promise<string | null>;
   initialFile(): Promise<string | null>;
   watch(path: string): Promise<void>;
   unwatch(path: string): Promise<void>;
@@ -46,6 +50,10 @@ export interface Backend {
   listDir(path: string): Promise<DirEntry[]>;
   /** Every file under `root` (relative paths), minus hidden and git-ignored ones. */
   listFiles(root: string): Promise<string[]>;
+  /** The lines matching a regex in the files `listFiles` lists, at most 2000 (smart case). */
+  searchFiles(root: string, pattern: string): Promise<SearchMatch[]>;
+  /** Opens a web or mail address, or a file this editor does not edit, with the system's default app. */
+  openExternal(target: string): Promise<void>;
   /** The nearest directory at or above `dir` holding `.git` or `.helix`, else `dir`. */
   workspaceRoot(dir: string): Promise<string>;
   homeDir(): Promise<string>;
@@ -98,12 +106,14 @@ export interface DirEntry {
 const FILTERS = {
   md: [{ name: "Markdown", extensions: ["md", "markdown"] }],
   docx: [{ name: "Word document", extensions: ["docx"] }],
+  html: [{ name: "Web page", extensions: ["html"] }],
 };
 
 const tauriBackend: Backend = {
   readText: (path) => invoke("read_text", { path }),
   writeText: (path, contents, format) => invoke("write_text", { path, contents, format }),
   writeBytes: (path, bytes) => invoke("write_bytes", { path, bytes: Array.from(bytes) }),
+  readBytes: async (path) => new Uint8Array(await invoke<ArrayBuffer>("read_bytes", { path })),
   async pickOpen() {
     const picked = await openDialog({ multiple: false, directory: false, filters: FILTERS.md });
     return typeof picked === "string" ? picked : null;
@@ -151,6 +161,8 @@ const tauriBackend: Backend = {
   clipboardWrite: (text) => writeText(text),
   listDir: (path) => invoke("list_dir", { path }),
   listFiles: (root) => invoke("list_files", { root }),
+  searchFiles: (root, pattern) => invoke("search_files", { root, pattern }),
+  openExternal: (target) => invoke("open_external", { target }),
   workspaceRoot: (dir) => invoke("workspace_root", { dir }),
   homeDir: () => invoke("home_dir"),
   configDir: () => invoke("config_dir"),
@@ -192,6 +204,7 @@ function tabStorage(): Storage | null {
 // so a test can play another program changing a file.
 const memoryFiles = new Map<string, string>([
   ["/sample.md", sample],
+  ["/chart.svg", chart],
   ["/notes/ideas.md", "# Ideas\n\n- A second file, for trying buffers and the file picker.\n"],
   ...Object.entries(tabStorage() ?? {})
     .filter(([k]) => k.startsWith(FILE))
@@ -215,7 +228,16 @@ const browserBackend: Backend = {
     tabStorage()?.setItem(FILE + path, contents);
     if (watched.has(path)) setTimeout(() => fileChanged(path));
   },
+  // The stand-in's files are text; an SVG file stands in for an image.
+  async readBytes(path) {
+    const text = memoryFiles.get(path);
+    if (text === undefined) throw new Error(`${path}: not found`);
+    return new TextEncoder().encode(text);
+  },
   async writeBytes(path, bytes) {
+    // Kept for the tests, then downloaded.
+    (window as unknown as { written: Record<string, Uint8Array> }).written ??= {};
+    (window as unknown as { written: Record<string, Uint8Array> }).written[path] = bytes;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([bytes as BlobPart]));
     a.download = path.split("/").pop()!;
@@ -274,6 +296,17 @@ const browserBackend: Backend = {
   listFiles: async (root) => {
     const dir = root.endsWith("/") ? root : `${root}/`;
     return [...memoryFiles.keys()].filter((p) => p.startsWith(dir)).map((p) => p.slice(dir.length));
+  },
+  async searchFiles(root, pattern) {
+    const re = searchRegex(pattern);
+    const files = (await this.listFiles(root)).sort();
+    const dir = root.endsWith("/") ? root : `${root}/`;
+    return files.flatMap((rel) => searchText(rel, memoryFiles.get(dir + rel)!, re)).slice(0, MAX_MATCHES);
+  },
+  // Tests read what was opened from the page.
+  async openExternal(target) {
+    (window as unknown as { openedExternally: string[] }).openedExternally ??= [];
+    (window as unknown as { openedExternally: string[] }).openedExternally.push(target);
   },
   workspaceRoot: async () => "/",
   homeDir: async () => "",

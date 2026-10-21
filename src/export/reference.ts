@@ -45,6 +45,8 @@ export function exportReference(depth = 2): string {
     "",
     "| Command | What it does |",
     "| --- | --- |",
+    "| `:export-docx` | Write the Word document, next to the file or to the path given |",
+    "| `:export-html` | Write a standalone web page in the same style, images included; print it from a browser for a PDF on the style's page |",
     "| `:export-style` | Pick the document's style, seeing each in the window as you move through them, or name it (`reset` removes it) |",
     "| `:export-style-default` | Show or set the style for documents without one, in `~/.config/md-editor/config.toml` |",
     "| `:export-style-new <name>` | Start a style from the document's style, with every key commented out; `project` after the name puts it in the project |",

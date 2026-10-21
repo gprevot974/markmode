@@ -44,6 +44,11 @@ const SKIP = new Set([
   "CommentBlock",
   "FrontMatter",
   "LinkLabel",
+  "WikiLinkMark",
+  "FootnoteRef",
+  "FootnoteLabel",
+  "InlineMath",
+  "BlockMath",
 ]);
 
 const misspelled = Decoration.mark({ class: "hx-misspelled" });

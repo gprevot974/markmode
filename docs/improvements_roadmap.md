@@ -9,8 +9,8 @@ it, and the rest widens its reach.
 
 *Done: see "Reviewing outside changes", "Comments" and "Version history" in
 the README. The keys differ from the first idea: `space y` is Helix's yank to
-clipboard, so changes are decided with `space d a` / `space d r`, and `]g` /
-`[g` move between them, as between diff hunks in Helix. `]c` / `[c` move
+clipboard, so changes are decided with `space g a` / `space g r`, and `]g` /
+`[g` move between them, as between diff hunks in Helix: `g` for both. `]c` / `[c` move
 between comments.*
 
 The app does not need its own chat client. People already run Claude Code,
@@ -58,6 +58,12 @@ People forgive missing features; they don't forgive losing text.
 The pitch becomes "your Helix setup, for prose."
 
 ## 4. Fill the main markdown gaps
+
+*Done: see "Moving around prose", "Links, images, footnotes and math" and
+"Export" in the README. Instead of pandoc, `:export-html` writes a page in the
+export style, which prints to PDF from a browser. Links open with `gf` and
+Cmd-click but not Enter, which Helix configs often remap (`goto_word` here).
+In the docx, equations are typeset Word equations.*
 
 Roughly in order of value:
 

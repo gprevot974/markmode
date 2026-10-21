@@ -7,6 +7,7 @@ mod files;
 mod helix;
 mod history;
 mod recovery;
+mod search;
 
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -52,6 +53,12 @@ fn read_text(path: String) -> Result<FileText, String> {
 fn write_text(path: String, contents: String, format: Option<files::Format>) -> Result<(), String> {
     let bytes = files::encode(&contents, format.unwrap_or(files::UTF8)).map_err(|e| format!("{path}: {e}"))?;
     files::write_atomic(Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))
+}
+
+/// A file's bytes, as binary rather than JSON (images for the preview and the export).
+#[tauri::command]
+async fn read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    std::fs::read(&path).map(tauri::ipc::Response::new).map_err(|e| format!("{path}: {e}"))
 }
 
 #[tauri::command]
@@ -133,6 +140,29 @@ async fn list_files(root: String) -> Result<Vec<String>, String> {
     }
     files.sort();
     Ok(files)
+}
+
+/// Opens a web or mail address, or a file this editor does not edit (an image,
+/// a PDF), with the system's default app.
+#[tauri::command]
+fn open_external(target: String) -> Result<(), String> {
+    let lower = target.to_ascii_lowercase();
+    let url = ["http://", "https://", "mailto:"].iter().any(|s| lower.starts_with(s));
+    if !url && !Path::new(&target).is_absolute() {
+        return Err(format!("{target}: not an address or an absolute path"));
+    }
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = std::process::Command::new("explorer");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut command = std::process::Command::new("xdg-open");
+    command.arg(&target).spawn().map(|_| ()).map_err(|e| format!("{target}: {e}"))
+}
+
+#[tauri::command]
+async fn search_files(root: String, pattern: String) -> Result<Vec<search::Match>, String> {
+    search::search(Path::new(&root), &pattern)
 }
 
 /// The nearest directory at or above `dir` holding `.git` or `.helix`, else `dir`.
@@ -330,11 +360,14 @@ pub fn run() {
             read_text,
             write_text,
             write_bytes,
+            read_bytes,
             take_initial_file,
             watch_file,
             unwatch_file,
             list_dir,
             list_files,
+            search_files,
+            open_external,
             workspace_root,
             current_dir,
             home_dir,

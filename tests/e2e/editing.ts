@@ -23,15 +23,15 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   check("no line numbers by default", !(await ev(() => document.querySelector(".cm-lineNumbers"))));
   await ev(() => sessionStorage.setItem("md-editor.helix-config", JSON.stringify({ editor: { gutters: ["line-numbers"] } })));
   await restart();
-  await type("8Gx");
+  await type("9Gx");
   const gutter = await ev(() => ({
     numbers: document.querySelectorAll(".cm-lineNumbers .cm-gutterElement").length,
     active: [...document.querySelectorAll(".cm-activeLineGutter")].map((e) => e.textContent),
   }));
-  check("line numbers, the active one at the cursor after x", gutter.numbers > 5 && gutter.active.includes("8") && !gutter.active.includes("9"), gutter);
+  check("line numbers, the active one at the cursor after x", gutter.numbers > 5 && gutter.active.includes("9") && !gutter.active.includes("10"), gutter);
   await type(";");
   const offsets = await ev(() =>
-    [6, 8, 10].map((n) => {
+    [7, 9, 11].map((n) => {
       const v = app.view;
       const g = [...document.querySelectorAll(".cm-lineNumbers .cm-gutterElement")].find((e) => e.textContent === String(n))!;
       const { node } = v.domAtPos(v.state.doc.line(n).from + 1);
