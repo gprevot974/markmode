@@ -484,6 +484,156 @@ body {
   color: var(--link);
 }
 
+/* Front matter (frontmatter.ts): the document's properties, as a card. */
+/* Its lines keep the text's height, so line numbers stay in line. */
+.md-frontmatter {
+  background: var(--bg-dim);
+  color: var(--fg-dim);
+}
+.md-fm-first {
+  border-radius: 6px 6px 0 0;
+}
+.md-fm-last {
+  border-radius: 0 0 6px 6px;
+}
+.md-property {
+  font-family: var(--ui-font);
+  font-size: 0.8em;
+}
+.md-property-key {
+  display: inline-block;
+  min-width: 7.5em;
+  color: var(--fg-dim);
+}
+.md-property-value {
+  color: var(--fg);
+}
+
+/* ── Export preview (preview/exportLook.ts) ──────────────────────────────── */
+/* The document as its export style looks: the style's fonts, colors and
+   sizes on a white page as wide as the style's text. The --x- variables are
+   the style's; the editor points the theme variables at them, while the
+   statusline keeps the theme. */
+.export-preview .win-editor {
+  --bg: #e8e8eb;
+  --bg-dim: #f1f1f3;
+  --bg-line: var(--x-table-band);
+  --bg-raised: var(--x-rule);
+  --fg: var(--x-text);
+  --fg-dim: var(--x-muted);
+  --fg-muted: var(--x-muted);
+  --h1: var(--x-title);
+  --h2: var(--x-heading);
+  --h3: var(--x-subheading);
+  --h4: var(--x-subheading);
+  --strong: var(--x-text);
+  --em: var(--x-text);
+  --code: var(--x-text);
+  --link: var(--x-accent);
+  --list: var(--x-accent);
+  --quote: var(--x-muted);
+  --sel: #c9d7ea;
+  --sel-primary: #a9c1e0;
+  --sel-select: #d9cfea;
+  --sel-select-primary: #bfaedd;
+  --cursorline: #f6f6f8;
+  --prose-font: var(--x-body-font);
+  --ui-font: var(--x-heading-font);
+  --mono-font: var(--x-code-font);
+  --measure: var(--x-measure);
+  color-scheme: light;
+  background: var(--bg);
+}
+.export-preview .cm-editor {
+  background: var(--bg);
+}
+.export-preview .cm-content {
+  background: #fff;
+  padding: 2.5em 3em 4em;
+  box-sizing: content-box;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
+  min-height: 60vh;
+}
+.export-preview.cursorline .cm-activeLine {
+  background: var(--cursorline) !important;
+}
+.export-preview .md-h1 {
+  font-size: var(--x-title-size);
+}
+.export-preview .md-h2 {
+  font-size: var(--x-heading-size);
+}
+.export-preview .md-h3,
+.export-preview .md-h4,
+.export-preview .md-h5,
+.export-preview .md-h6 {
+  font-size: var(--x-subheading-size);
+}
+.export-preview.x-heading-rules .md-h2:not(.md-subtitle) {
+  border-bottom: 1px solid var(--x-rule);
+}
+.export-preview.x-subtitle .md-subtitle {
+  font-size: var(--x-subtitle-size);
+  font-weight: 400;
+  color: var(--x-subtitle);
+  border-bottom: 2px solid var(--x-subtitle-rule);
+  padding-bottom: 0.4em !important;
+  margin-bottom: 0.6em;
+}
+.export-preview.x-bold-labels .md-lead {
+  color: var(--x-label);
+}
+.export-preview.x-metadata-blocks .md-meta {
+  font-size: var(--x-metadata-size);
+  color: var(--x-muted);
+}
+.export-preview.x-metadata-blocks .md-meta .md-strong {
+  color: var(--x-muted);
+}
+.export-preview .md-code {
+  background: none;
+}
+/* The export leaves horizontal rules out. */
+.export-preview .md-hr {
+  border-bottom-color: transparent;
+}
+.export-preview .md-table {
+  font-size: var(--x-table-size);
+  font-family: var(--x-body-font);
+}
+.export-preview .md-table th,
+.export-preview .md-table td {
+  border-color: var(--x-rule);
+}
+.export-preview .md-table th {
+  background: var(--x-table-header);
+  color: var(--x-table-header-text);
+}
+.export-preview .md-table th strong {
+  color: inherit;
+}
+.export-preview .md-table-even td {
+  background: none;
+}
+.export-preview.x-table-bands .md-table-even td {
+  background: var(--x-table-band);
+}
+.export-preview .md-table-total td,
+.export-preview.x-table-bands .md-table-total td {
+  background: var(--x-table-total);
+  color: var(--x-table-total-text);
+  font-weight: 700;
+}
+.export-preview .md-table-total td strong {
+  color: inherit;
+}
+.export-preview .md-table td > strong:first-child {
+  color: var(--x-text);
+}
+.export-preview.x-bold-labels .md-table td > strong:first-child {
+  color: var(--x-label);
+}
+
 /* ── Statuslines, prompt and messages ────────────────────────────────────── */
 
 .statusline,

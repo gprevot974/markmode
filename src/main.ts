@@ -3,17 +3,26 @@ import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from 
 import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
+import { LanguageDescription, type LanguageSupport } from "@codemirror/language";
 
 import { config } from "./config.ts";
 import { backend } from "./backend.ts";
-import { helixState, modeField, nextBoundaryIn, type Mode } from "./helix/state.ts";
+import { helixState, modeField, nextBoundaryIn, setMode, type Mode } from "./helix/state.ts";
 import { helixKeys } from "./helix/dispatcher.ts";
 import { normalKeys, insertKeys, mergeKeys } from "./helix/keymap.ts";
 import { selectionDecorations } from "./helix/cursor.ts";
 import { cursorLines } from "./helix/cursorline.ts";
 import { jumpLabels } from "./helix/jumplabels.ts";
 import { commands, type Host, type WindowCommand } from "./helix/commands.ts";
-import { livePreview, setTableWidths, tableWidths } from "./preview/livePreview.ts";
+import { livePreview, setTableWidths, setTotalRows, tableWidths } from "./preview/livePreview.ts";
+import { frontMatterSyntax } from "./preview/frontMatterSyntax.ts";
+import { applyExportLook } from "./preview/exportLook.ts";
+import { frontMatter, setProperty } from "./frontmatter.ts";
+import { describeStyle, starterStyle, type ExportStyle } from "./export/style.ts";
+import { configuredStyle, listStyles, resolveStyle, setConfiguredStyle, stylePath, type Resolved, type StyleDirs, type StyleEntry, type StyleFs } from "./export/styles.ts";
+import { exportReference } from "./export/reference.ts";
+import { propertyCompletions, styleCompletions, type Candidate } from "./export/complete.ts";
+import { openMenu } from "./ui/menu.ts";
 import { spellcheck } from "./spell.ts";
 import { comments } from "./comments.ts";
 import { asChange, changesOf, endReview, originalOf, replayed, reviewEffects, reviewing, reviewSlot, startReview } from "./review.ts";
@@ -56,6 +65,18 @@ function diffChange(a: string, b: string) {
   let end = 0;
   while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
   return { from: start, to: a.length - end, insert: b.slice(start, b.length - end) };
+}
+
+/** Files edited as markdown, with the live preview; others (a style's TOML) are plain text. */
+const isMarkdownPath = (path: string | null) => !path || /\.(?:md|markdown|mdown|mkd)$/i.test(path);
+
+/** Highlighting for the other files, by language name, loaded when such a file is opened. */
+const plainLanguages = new Map<string, LanguageSupport>();
+const languageOf = (path: string) => LanguageDescription.matchFilename(languages, basename(path));
+
+async function loadLanguage(path: string) {
+  const found = languageOf(path);
+  if (found && !plainLanguages.has(found.name)) plainLanguages.set(found.name, await found.load().catch(() => []) as LanguageSupport);
 }
 
 /** At most this many files are read for the headings picker across files (`space S`). */
@@ -147,6 +168,11 @@ class App implements Host {
   private clock = 0;
   private home = "";
   private cwd = "";
+  /** ~/.config/md-editor. */
+  private configDir = "";
+  /** `:export-preview`: windows show their document in its export style. */
+  private exportPreview = false;
+  private exportPreviewTimer: number | undefined;
 
   constructor() {
     const doc = this.addDoc(null, "");
@@ -171,9 +197,10 @@ class App implements Host {
   }
 
   async init() {
-    [this.home, this.cwd] = await Promise.all([
+    [this.home, this.cwd, this.configDir] = await Promise.all([
       backend.homeDir().catch(() => ""),
       backend.currentDir().catch(() => ""),
+      backend.configDir().catch(() => ""),
     ]);
   }
 
@@ -183,7 +210,9 @@ class App implements Host {
   }
 
   /** A new editor state; `original` is the text from before the outside changes under review. */
-  private createState(doc: string | Text, selection?: EditorSelection, original: Text | null = null): EditorState {
+  private createState(doc: string | Text, path: string | null, selection?: EditorSelection, original: Text | null = null): EditorState {
+    const prose = isMarkdownPath(path);
+    const plain = prose ? null : plainLanguages.get(languageOf(path!)?.name ?? "");
     const extensions: Extension[] = [
       helixState,
       history({ newGroupDelay: 10 * 60_000 }),
@@ -192,11 +221,10 @@ class App implements Host {
       config.lineNumbers ? lineNumbers() : [],
       cursorLines(config.cursorline),
       config.softWrap ? EditorView.lineWrapping : [],
-      markdown({ base: markdownLanguage, codeLanguages: languages }),
-      livePreview,
+      prose ? [markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [frontMatterSyntax] }), livePreview] : (plain ?? []),
       comments,
       reviewSlot(original),
-      config.spellcheck
+      config.spellcheck && prose
         ? spellcheck({
             check: (text) => backend.checkSpelling(text),
             suggest: (word) => backend.spellingSuggestions(word),
@@ -228,7 +256,7 @@ class App implements Host {
   // ── Documents ──────────────────────────────────────────────────────────────
 
   private addDoc(path: string | null, text: string, format = defaultFormat, original: Text | null = null): Doc {
-    const doc = new Doc(path, this.createState(text, undefined, original), format);
+    const doc = new Doc(path, this.createState(text, path, undefined, original), format);
     this.docs.push(doc);
     if (path) this.watch(path);
     return doc;
@@ -280,10 +308,11 @@ class App implements Host {
     // own state on that text, kept in step by `afterTransactions`.
     const live = this.windowsShowing(doc)[0];
     win.doc = doc;
-    win.view.setState(live ? this.createState(live.view.state.doc, live.view.state.selection, reviewOriginal(live.view.state)) : doc.state);
+    win.view.setState(live ? this.createState(live.view.state.doc, doc.path, live.view.state.selection, reviewOriginal(live.view.state)) : doc.state);
     doc.lastAccess = ++this.clock;
     this.renderStatus(win);
     if (win === this.active) this.updateTitle();
+    if (this.exportPreview) this.scheduleExportPreview();
   }
 
   async openPath(path: string, how: OpenHow = "replace") {
@@ -429,7 +458,7 @@ class App implements Host {
   private split(dir: SplitDir): Win {
     const from = this.active;
     const { state } = from.view;
-    const win = this.createWindow(from.doc, this.createState(state.doc, state.selection, reviewOriginal(state)));
+    const win = this.createWindow(from.doc, this.createState(state.doc, from.doc.path, state.selection, reviewOriginal(state)));
     win.jumps = from.jumps.clone();
     this.layout.split(from, win, dir);
     win.view.dispatch({ effects: from.view.scrollSnapshot() });
@@ -500,6 +529,8 @@ class App implements Host {
     if (!win) return;
     this.renderStatus(win);
     if (u.docChanged && win.doc === this.active.doc) this.updateTitle();
+    // A style edited, or another one named, shows as it is typed.
+    if (u.docChanged && this.exportPreview && (!isMarkdownPath(win.doc.path) || u.changes.touchesRange(0, 2000))) this.scheduleExportPreview();
   }
 
   private renderStatus(win: Win) {
@@ -576,6 +607,10 @@ class App implements Host {
     if (typable?.args === "line-ending") return choices(lineEndings);
     if (typable?.args === "zoom") return choices(["in", "out", "reset", "100", "125", "150"]);
     if (typable?.args === "table-widths") return choices(["reset"]);
+    if (typable?.args === "export-style" || typable?.args === "style-name") {
+      const names = (await listStyles(this.styleFs, await this.styleDirs(this.active.doc))).map((e) => e.name);
+      return choices(typable.args === "export-style" ? [...names, "reset"] : names);
+    }
     if (typable?.args !== "path") return [];
     const slash = arg.lastIndexOf("/");
     const dirPart = arg.slice(0, slash + 1);
@@ -703,6 +738,22 @@ class App implements Host {
         case "reload-all":
           for (const d of this.docs) if (d.path) await this.reload(d);
           return;
+        case "export-style":
+          if (!arg) return await this.stylePicker();
+          return await this.setDocStyle(arg === "reset" ? null : arg);
+        case "export-style-default":
+          return await this.setDefaultStyle(arg ?? "");
+        case "export-style-new":
+          return await this.newStyle(arg ?? "");
+        case "export-style-open":
+          return await this.openStyle(arg ?? "");
+        case "export-preview":
+          this.exportPreview = !this.exportPreview;
+          await this.refreshExportPreview();
+          return this.message(this.exportPreview ? "export preview: on" : "export preview: off");
+        case "export-help":
+          this.show(this.active, this.addDoc(null, `# Export reference\n\n${exportReference()}`));
+          return this.message("the export reference, as a scratch buffer");
         case "export-docx":
           return await this.exportDocx(arg);
         case "encoding":
@@ -1048,6 +1099,7 @@ class App implements Host {
    * here (or since the changes still pending when the app quit) is up for review.
    */
   private async addFileDoc(path: string, text: string, format: FileFormat, exists: boolean): Promise<Doc> {
+    if (!isMarkdownPath(path)) await loadLanguage(path);
     const seen = exists ? ((await backend.historyBaseline(path).catch(() => null)) ?? (await this.lastVersion(path))) : null;
     const original = seen !== null && seen !== text ? Text.of(seen.split("\n")) : null;
     const doc = this.addDoc(path, text, format, original);
@@ -1270,6 +1322,249 @@ class App implements Host {
     });
   }
 
+  // ── Export styles ──────────────────────────────────────────────────────────
+
+  /** Style files, read from their buffer when one is open, so edits apply before they are saved. */
+  private styleFs: StyleFs = {
+    read: async (path) => {
+      const open = this.docs.find((d) => d.path === path);
+      if (open) return this.stateOf(open).doc.toString();
+      return backend.readText(path).then(
+        (f) => f.text,
+        () => null,
+      );
+    },
+    list: (dir) =>
+      backend.listDir(dir).then(
+        (entries) => entries.filter((e) => !e.isDir).map((e) => e.name),
+        () => [],
+      ),
+  };
+
+  /** Where a document's styles are: its project's `.md-editor` and ~/.config/md-editor. */
+  private async styleDirs(doc: Doc): Promise<StyleDirs> {
+    const dir = doc.path ? dirname(doc.path) : null;
+    const root = dir ? await backend.workspaceRoot(dir).catch(() => dir) : null;
+    return { project: root ? `${root === "/" ? "" : root}/.md-editor` : null, user: this.configDir || null };
+  }
+
+  /** The name a document's style goes by: its front matter's, else the configured one. */
+  private async styleNameOf(doc: Doc, dirs: StyleDirs): Promise<string> {
+    const { doc: text } = this.stateOf(doc);
+    const named = frontMatter(text.sliceString(0, 20_000))?.fields.style;
+    return typeof named === "string" && named.trim() ? named.trim() : await configuredStyle(this.styleFs, dirs);
+  }
+
+  private async styleOf(doc: Doc): Promise<Resolved & { name: string }> {
+    const dirs = await this.styleDirs(doc);
+    const name = await this.styleNameOf(doc, dirs);
+    return { ...(await resolveStyle(name, this.styleFs, dirs)), name };
+  }
+
+  /** Names the style in the document's front matter; null removes it. */
+  private async setDocStyle(name: string | null) {
+    const view = this.view;
+    if (!isMarkdownPath(this.active.doc.path)) return this.message("export-style: not a markdown file", "error");
+    if (name) {
+      const known = await listStyles(this.styleFs, await this.styleDirs(this.active.doc));
+      if (!known.some((e) => e.name === name)) return this.message(`no export style named ${name} (:export-style-new ${name} starts one)`, "error");
+    }
+    const change = setProperty(view.state.doc.toString(), "style", name);
+    if (change) view.dispatch({ changes: change, userEvent: "input.export-style" });
+    this.message(name ? `export style: ${name}` : "export style: the default one");
+  }
+
+  private async stylePicker() {
+    const win = this.active;
+    const doc = win.doc;
+    const dirs = await this.styleDirs(doc);
+    const current = await this.styleNameOf(doc, dirs);
+    const entries = await listStyles(this.styleFs, dirs);
+    openPicker<StyleEntry>(
+      {
+        title: "export style",
+        items: [...entries.filter((e) => e.name === current), ...entries.filter((e) => e.name !== current)],
+        prefix: (e) => (e.name === current ? "● " : "  ") + e.scope.padEnd(9),
+        text: (e) => (e.description ? `${e.name}  ${e.description}` : e.name),
+        preview: async (e) => {
+          const resolved = await resolveStyle(e.name, this.styleFs, dirs);
+          const where = e.path ? `# ${e.path}` : "# built in";
+          return { text: `${where}\n${resolved.errors.map((x) => `# ! ${x}\n`).join("")}\n${describeStyle(resolved.style)}` };
+        },
+        onSelect: (e) => void this.setDocStyle(e.name),
+        // The window shows each style as the selection reaches it, preview on or not.
+        onHighlight: (e) => {
+          if (e) void this.showLook(win, resolveStyle(e.name, this.styleFs, dirs).then((r) => r.style));
+        },
+        onClose: () => void this.refreshExportPreview(),
+      },
+      () => this.view.focus(),
+    );
+  }
+
+  private async setDefaultStyle(name: string) {
+    const dirs = await this.styleDirs(this.active.doc);
+    if (!name) {
+      const configured = await configuredStyle(this.styleFs, dirs);
+      return this.message(`export style of documents that name none: ${configured}`);
+    }
+    if (!this.configDir) return this.message("export-style-default: no config directory here", "error");
+    const known = await listStyles(this.styleFs, dirs);
+    if (!known.some((e) => e.name === name)) return this.message(`no export style named ${name}`, "error");
+    const path = `${this.configDir}/config.toml`;
+    const text = (await this.styleFs.read(path)) ?? "";
+    await backend.createDir(this.configDir);
+    await backend.writeText(path, setConfiguredStyle(text, name));
+    const open = this.docs.find((d) => d.path === path);
+    if (open) await this.onDiskChange(open);
+    this.message(`export style of documents that name none: ${name}, in ${this.docName({ path } as Doc, true)}`);
+    if (this.exportPreview) await this.refreshExportPreview();
+  }
+
+  private async newStyle(arg: string) {
+    const [name, where] = arg.split(/\s+/);
+    if (!name || !/^[\w-]+$/.test(name)) return this.message("export-style-new: a name of letters, digits and dashes", "error");
+    if (where && where !== "project") return this.message("export-style-new: the name, then project for the project's styles", "error");
+    const doc = this.active.doc;
+    const dirs = await this.styleDirs(doc);
+    const dir = where ? dirs.project : dirs.user;
+    if (!dir) return this.message(`export-style-new: no ${where ? "project" : "config"} directory here`, "error");
+    const path = stylePath(dir, name);
+    if ((await this.styleFs.read(path)) !== null) return this.message(`${name} exists: :export-style-open ${name}`, "error");
+    const from = await this.styleOf(doc);
+    const parent = from.found ? from.name : "default";
+    await backend.createDir(`${dir}/styles`);
+    await backend.writeText(path, starterStyle(parent, from.style));
+    await this.openPath(path, "vsplit");
+    this.message(`new style ${name}, from ${parent}; :export-style ${name} uses it`);
+  }
+
+  private async openStyle(arg: string) {
+    const doc = this.active.doc;
+    const dirs = await this.styleDirs(doc);
+    const name = arg || (await this.styleNameOf(doc, dirs));
+    const entry = (await listStyles(this.styleFs, dirs)).find((e) => e.name === name);
+    if (!entry) return this.message(`no export style named ${name}`, "error");
+    if (!entry.path) return this.message(`${name} is built in: :export-style-new <name> starts a style from it`, "error");
+    await this.openPath(entry.path, isMarkdownPath(doc.path) ? "vsplit" : "replace");
+  }
+
+  private scheduleExportPreview() {
+    clearTimeout(this.exportPreviewTimer);
+    this.exportPreviewTimer = window.setTimeout(() => void this.refreshExportPreview(), 150);
+  }
+
+  /** Counts the looks asked for by window, so a style resolved late does not replace a later one. */
+  private lookGen = new WeakMap<Win, number>();
+
+  /** Gives each window the look of its document's export style, or of the theme with the preview off. */
+  private async refreshExportPreview() {
+    for (const win of this.layout.windows()) {
+      const on = this.exportPreview && isMarkdownPath(win.doc.path);
+      await this.showLook(win, on ? this.styleOf(win.doc).then((r) => r.style) : null);
+    }
+  }
+
+  private async showLook(win: Win, style: Promise<ExportStyle> | null) {
+    const gen = (this.lookGen.get(win) ?? 0) + 1;
+    this.lookGen.set(win, gen);
+    const resolved = await style;
+    if (gen !== this.lookGen.get(win)) return;
+    applyExportLook(win.el, resolved);
+    if (resolved) win.view.dispatch({ effects: setTotalRows.of(resolved["rules.total-rows"] as string) });
+    win.view.requestMeasure();
+  }
+
+  /**
+   * `C-x`: keys and values for a style file, or for the front matter of a
+   * document. In insert mode it completes what is typed before the cursor; in
+   * normal mode, the line's value, or else its key (keeping the value), or
+   * else the key typed on it.
+   */
+  async complete(view: EditorView) {
+    const win = this.layout.windows().find((w) => w.view === view) ?? this.active;
+    const doc = win.doc;
+    const { state } = view;
+    const insert = state.field(modeField) === "insert";
+    // In normal mode, the character under the block cursor (the end of a forward selection is past it).
+    const sel = state.selection.main;
+    const head = !insert && sel.head > sel.anchor ? sel.head - 1 : sel.head;
+    const line = state.doc.lineAt(head);
+    const dirs = await this.styleDirs(doc);
+    const styles = (await listStyles(this.styleFs, dirs)).map((e) => e.name);
+
+    let at: (col: number) => Candidate[];
+    if (doc.path && /\/styles\/[^/]+\.toml$/.test(doc.path)) {
+      const text = state.doc.toString();
+      const parent = /^\s*inherits\s*=\s*"([^"]+)"/m.exec(text)?.[1] ?? "default";
+      // A style inheriting its own name inherits the one this file hides.
+      const self = doc.path;
+      const fs: StyleFs = { ...this.styleFs, read: (p) => (p === self ? Promise.resolve(null) : this.styleFs.read(p)) };
+      const inherited = (await resolveStyle(parent, fs, dirs)).style;
+      const valueOf = (key: string) => {
+        const value = inherited[key];
+        if (value === undefined) return null;
+        return key.startsWith("colors.") ? `#${value}` : String(value);
+      };
+      // The line as it is up to `col`, for the key and value patterns.
+      at = (col) => {
+        const lines = text.split("\n");
+        lines[line.number - 1] = line.text.slice(0, col);
+        return styleCompletions(lines.join("\n"), line.number - 1, col, styles, valueOf);
+      };
+    } else {
+      const block = isMarkdownPath(doc.path) ? frontMatter(state.doc.sliceString(0, 20_000)) : null;
+      // Between the fences: the closing one is line `endLine`.
+      if (!block || line.number < 2 || line.number >= block.endLine) {
+        return this.message("no completions here: C-x completes in front matter and style files");
+      }
+      at = (col) => propertyCompletions(line.text.slice(0, col), col, styles);
+    }
+
+    // Where to complete: [column to complete at, column the completion replaces up to].
+    const tries: [number, number][] = [];
+    if (insert) tries.push([head - line.from, head - line.from]);
+    else {
+      const key = /^(\s*)([\w-]+\s*[:=][ \t]*)/.exec(line.text);
+      const header = /^\s*\[/.exec(line.text);
+      if (key) {
+        const comment = /\s+#[^"]*$/.exec(line.text)?.[0].length ?? 0;
+        tries.push([key[0].length, line.length - comment], [key[1].length, key[0].length]);
+      } else if (header) tries.push([header[0].length, line.length]);
+      else tries.push([line.length, line.length]);
+    }
+    let candidates: Candidate[] = [];
+    let to = 0;
+    for (const [col, end] of tries) {
+      candidates = at(col);
+      to = end;
+      if (candidates.length) break;
+    }
+    if (!candidates.length) return this.message("no completions here");
+
+    const keys = "123456789abcdefghijklmnopqrstuvwxyz";
+    const coords = view.coordsAtPos(insert ? head : line.from + Math.min(to, line.length));
+    openMenu(
+      candidates.slice(0, keys.length).map((c, i) => ({
+        key: keys[i],
+        label: c.detail ? `${c.label}  —  ${c.detail}` : c.label,
+        action: () => {
+          const end = line.from + c.from + c.insert.length;
+          // A key with nothing after it waits for its value: type it in insert mode.
+          const typing = insert || (c.insert.endsWith(" ") && to >= line.length);
+          view.dispatch({
+            changes: { from: line.from + c.from, to: line.from + to, insert: c.insert },
+            selection: typing ? { anchor: end } : { anchor: end - 1, head: end },
+            effects: typing && !insert ? setMode.of("insert") : [],
+            userEvent: "input.complete",
+          });
+        },
+      })),
+      { left: coords?.left ?? 0, top: coords?.bottom ?? 0 },
+      () => view.focus(),
+    );
+  }
+
   /** The jumplist of the current window, latest first; Enter goes there. */
   jumplistPicker() {
     const win = this.active;
@@ -1318,11 +1613,15 @@ class App implements Host {
         ? doc.path.replace(/\.(md|markdown)$/i, "") + ".docx"
         : await backend.pickSave("untitled.docx", "docx");
     if (!target) return;
+    const resolved = await this.styleOf(doc);
+    if (!resolved.found) return this.message(`no export style named ${resolved.name} (:export-style lists them)`, "error");
     // Loaded on first export: the docx library is most of the bundle.
     const { markdownToDocx } = await import("./export/docx.ts");
-    const bytes = await markdownToDocx(this.stateOf(doc).doc.toString());
+    const bytes = await markdownToDocx(this.stateOf(doc).doc.toString(), resolved.style);
     await backend.writeBytes(target, bytes);
-    this.message(`exported ${basename(target)} (${(bytes.length / 1024).toFixed(0)} KB)`);
+    const done = `exported ${basename(target)} (${(bytes.length / 1024).toFixed(0)} KB) in the ${resolved.name} style`;
+    if (resolved.errors.length) this.message(`${done}, skipping: ${resolved.errors.join("; ")}`, "error");
+    else this.message(done);
   }
 
   clipboardRead() {

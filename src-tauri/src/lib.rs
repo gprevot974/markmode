@@ -83,6 +83,23 @@ fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     Ok(entries)
 }
 
+/// `~/.config/md-editor`: config.toml and the export styles.
+#[tauri::command]
+fn config_dir() -> String {
+    match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("md-editor"),
+        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/md-editor"),
+    }
+    .to_string_lossy()
+    .into_owned()
+}
+
+/// Makes a directory and the ones above it that are missing.
+#[tauri::command]
+fn create_dir(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path).map_err(|e| format!("{path}: {e}"))
+}
+
 #[tauri::command]
 fn home_dir() -> String {
     std::env::var("HOME").unwrap_or_default()
@@ -321,6 +338,8 @@ pub fn run() {
             workspace_root,
             current_dir,
             home_dir,
+            config_dir,
+            create_dir,
             exit_app,
             spell::check_spelling,
             spell::spelling_suggestions,

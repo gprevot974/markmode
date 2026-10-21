@@ -42,6 +42,7 @@ const SKIP = new Set([
   "HTMLBlock",
   "Comment",
   "CommentBlock",
+  "FrontMatter",
   "LinkLabel",
 ]);
 

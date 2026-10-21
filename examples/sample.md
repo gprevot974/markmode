@@ -1,5 +1,7 @@
-<!-- footer: Draft for discussion -->
-<!-- author: md-editor -->
+---
+author: md-editor
+footer: Draft for discussion
+---
 
 # Markdown Editor Sample
 

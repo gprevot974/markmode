@@ -49,6 +49,10 @@ export interface Backend {
   /** The nearest directory at or above `dir` holding `.git` or `.helix`, else `dir`. */
   workspaceRoot(dir: string): Promise<string>;
   homeDir(): Promise<string>;
+  /** ~/.config/md-editor: config.toml and the export styles. */
+  configDir(): Promise<string>;
+  /** Makes a directory, with the ones above it. */
+  createDir(path: string): Promise<void>;
   currentDir(): Promise<string>;
   /** Keeps a copy of a buffer with unsaved changes, for after a crash. */
   recoveryWrite(id: number, contents: string): Promise<void>;
@@ -149,6 +153,8 @@ const tauriBackend: Backend = {
   listFiles: (root) => invoke("list_files", { root }),
   workspaceRoot: (dir) => invoke("workspace_root", { dir }),
   homeDir: () => invoke("home_dir"),
+  configDir: () => invoke("config_dir"),
+  createDir: (path) => invoke("create_dir", { path }),
   currentDir: () => invoke("current_dir"),
   recoveryWrite: (id, contents) => invoke("recovery_write", { id, contents }),
   recoveryRemove: (id) => invoke("recovery_remove", { id }),
@@ -271,6 +277,8 @@ const browserBackend: Backend = {
   },
   workspaceRoot: async () => "/",
   homeDir: async () => "",
+  configDir: async () => "/config/md-editor",
+  createDir: async () => {},
   currentDir: async () => "/",
   // Kept in the page's storage, so reloading the page plays the part of a
   // restart after a crash.

@@ -17,6 +17,7 @@ import {
 } from "@codemirror/view";
 import { type CellLabel, measureColumns, renderTableLine, splitRow } from "./table.ts";
 import { describeDirective, fitWidths, parseDirective, parseWidths, widthsDirective, widthsLineAbove } from "../directives.ts";
+import { PROPERTIES } from "../frontmatter.ts";
 
 /**
  * One-based numbers of lines touched by a selection. A range's end is
@@ -54,6 +55,73 @@ class TextWidget extends WidgetType {
   }
 }
 
+// ── Export rules ─────────────────────────────────────────────────────────────
+// The export preview (`:export-preview`) styles what the export styles: the
+// classes below mark it always, and window classes and variables
+// (preview/exportLook.ts) give it the style's look. Only which rows are
+// total rows depends on the style itself.
+
+export const setTotalRows = StateEffect.define<string>();
+
+const totalRows = StateField.define<string>({
+  create: () => "Total",
+  update: (word, tr) => tr.effects.reduce((w, e) => (e.is(setTotalRows) ? e.value : w), word),
+});
+
+/**
+ * The line of the subtitle: the first `##` after the `#` title, unless the
+ * document says it has none, in its front matter or with a directive.
+ */
+function subtitleLine(state: EditorState): number | null {
+  let title = false;
+  for (let node = syntaxTree(state).topNode.firstChild; node; node = node.nextSibling) {
+    if (node.name === "FrontMatter" && /^subtitle:\s*(?:false|no)\s*$/im.test(state.doc.sliceString(node.from, node.to))) return null;
+    if (node.name === "CommentBlock" && parseDirective(state.doc.lineAt(node.from).text)?.key === "no-subtitle") return null;
+    if (node.name === "ATXHeading1") title = true;
+    else if (node.name === "ATXHeading2" && title) return state.doc.lineAt(node.from).number;
+  }
+  return null;
+}
+
+const META = /^\s*\*\*[^*]+:\*\*/;
+
+const PROPERTY_LABELS: Record<string, string> = {
+  title: "Title",
+  subtitle: "Subtitle",
+  author: "Author",
+  description: "Description",
+  subject: "Subject",
+  keywords: "Keywords",
+  footer: "Footer",
+  style: "Export style",
+};
+
+/** A front matter line, as shown when the cursor is elsewhere: a label and its value. */
+class PropertyWidget extends WidgetType {
+  readonly key: string;
+  readonly value: string;
+  constructor(key: string, value: string) {
+    super();
+    this.key = key;
+    this.value = value;
+  }
+  eq(other: PropertyWidget) {
+    return other.key === this.key && other.value === this.value;
+  }
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "md-property";
+    const key = span.appendChild(document.createElement("span"));
+    key.className = "md-property-key";
+    key.textContent = PROPERTY_LABELS[this.key] ?? this.key;
+    if (!PROPERTIES.some((p) => p.key === this.key)) key.title = "Not used by this editor";
+    const value = span.appendChild(document.createElement("span"));
+    value.className = "md-property-value";
+    value.textContent = this.key === "subtitle" && /^(?:false|no)$/i.test(this.value) ? "none: the first ## is a section" : this.value.replace(/^(["'])(.*)\1$/, "$2");
+    return span;
+  }
+}
+
 const bullet = Decoration.replace({ widget: new TextWidget("•", "md-bullet") });
 const taskOpen = Decoration.replace({ widget: new TextWidget("☐", "md-task") });
 const taskDone = Decoration.replace({ widget: new TextWidget("☑", "md-task md-task-done") });
@@ -77,6 +145,7 @@ function buildInline(view: EditorView): DecorationSet {
   const active = activeLines(state);
   const isActive = (pos: number) => active.has(doc.lineAt(pos).number);
   const decos: DecoRange<Decoration>[] = [];
+  const subtitle = subtitleLine(state);
 
   for (const { from, to } of view.visibleRanges) {
     syntaxTree(state).iterate({
@@ -88,10 +157,37 @@ function buildInline(view: EditorView): DecorationSet {
         if (heading) {
           for (let pos = node.from; pos <= node.to; ) {
             const line = doc.lineAt(pos);
-            decos.push(Decoration.line({ class: `md-h md-h${heading[1]}` }).range(line.from));
+            const sub = line.number === subtitle ? " md-subtitle" : "";
+            decos.push(Decoration.line({ class: `md-h md-h${heading[1]}${sub}` }).range(line.from));
             pos = line.to + 1;
           }
           return;
+        }
+        // Front matter: each line a property, shown as a label and its value.
+        if (name === "FrontMatter") {
+          for (let pos = node.from; pos <= node.to; ) {
+            const line = doc.lineAt(pos);
+            const edge = pos === node.from ? " md-fm-first" : line.to >= node.to ? " md-fm-last" : "";
+            const fence = edge && /^(?:---|\.\.\.)\s*$/.test(line.text);
+            decos.push(Decoration.line({ class: `md-frontmatter${edge}` }).range(line.from));
+            const field = /^([A-Za-z][\w-]*)\s*:\s*(.*?)\s*$/.exec(line.text);
+            if (!isActive(pos) && line.length) {
+              if (fence) decos.push(hide.range(line.from, line.to));
+              else if (field) decos.push(Decoration.replace({ widget: new PropertyWidget(field[1], field[2]) }).range(line.from, line.to));
+            }
+            pos = line.to + 1;
+          }
+          return false;
+        }
+        // Metadata blocks: a paragraph whose every line is "**Label:** value".
+        if (name === "Paragraph" && node.node.parent?.name === "Document") {
+          const first = doc.lineAt(node.from);
+          const last = doc.lineAt(node.to);
+          if (last.number > first.number) {
+            const lines = [];
+            for (let n = first.number; n <= last.number; n++) lines.push(doc.line(n));
+            if (lines.every((l) => META.test(l.text))) for (const l of lines) decos.push(Decoration.line({ class: "md-meta" }).range(l.from));
+          }
         }
         // Directives (`<!-- footer: ... -->`) show as labels.
         if (name === "CommentBlock" && !isActive(node.from)) {
@@ -103,7 +199,9 @@ function buildInline(view: EditorView): DecorationSet {
           }
         }
         if (MARKS[name]) {
-          if (node.to > node.from) decos.push(Decoration.mark({ class: MARKS[name] }).range(node.from, node.to));
+          // Bold opening a paragraph is a label, which the export colors.
+          const lead = name === "StrongEmphasis" && node.node.parent?.name === "Paragraph" && node.node.parent.from === node.from;
+          if (node.to > node.from) decos.push(Decoration.mark({ class: lead ? "md-strong md-lead" : MARKS[name] }).range(node.from, node.to));
           // Inside a link, the URL is hidden along with its brackets.
           if (name !== "URL" || node.node.parent?.name !== "Link") return;
         }
@@ -388,6 +486,8 @@ const CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem",
 function buildTables(state: EditorState): DecorationSet {
   const active = activeLines(state);
   const labels = state.field(previewLabels, false) ?? [];
+  const word = (state.field(totalRows, false) ?? "Total").trim();
+  const total = word ? new RegExp(`\\*\\*${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i") : null;
   const decos: DecoRange<Decoration>[] = [];
   syntaxTree(state).iterate({
     enter(node) {
@@ -400,7 +500,8 @@ function buildTables(state: EditorState): DecorationSet {
       for (let n = first.number; n <= last.number; n++) {
         const line = state.doc.line(n);
         const edge = n === first.number ? " md-table-first" : n === last.number ? " md-table-last" : "";
-        decos.push(Decoration.line({ class: "md-table-line" + edge }).range(line.from));
+        const isTotal = n > first.number + 1 && total?.test(line.text) ? " md-table-total" : "";
+        decos.push(Decoration.line({ class: "md-table-line" + edge + isTotal }).range(line.from));
         if (active.has(n) || line.length === 0) continue;
         const onLine = labels.filter((l) => l.from >= line.from && l.from < line.to).map((l) => ({ at: l.from - line.from, text: l.text }));
         decos.push(
@@ -420,7 +521,7 @@ const tablePreview = StateField.define<DecorationSet>({
       tr.docChanged ||
       tr.selection ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state) ||
-      tr.effects.some((e) => e.is(setPreviewLabels))
+      tr.effects.some((e) => e.is(setPreviewLabels) || e.is(setTotalRows))
     ) {
       return buildTables(tr.state);
     }
@@ -480,4 +581,4 @@ const gutterClasses = StateField.define<RangeSet<GutterMarker>>({
   provide: (f) => gutterLineClass.from(f),
 });
 
-export const livePreview = [previewLabels, inlinePreview, tablePreview, gutterClasses];
+export const livePreview = [previewLabels, totalRows, inlinePreview, tablePreview, gutterClasses];

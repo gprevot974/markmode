@@ -8,7 +8,7 @@ export interface Typable {
   aliases: string[];
   doc: string;
   /** What the argument completes to. */
-  args?: "path" | "theme" | "encoding" | "line-ending" | "zoom" | "table-widths";
+  args?: "path" | "theme" | "encoding" | "line-ending" | "zoom" | "table-widths" | "export-style" | "style-name";
 }
 
 export const typables: Typable[] = [
@@ -32,6 +32,12 @@ export const typables: Typable[] = [
   { name: "reload", aliases: ["rl"], doc: "Discard changes and reload from the file on disk" },
   { name: "reload-all", aliases: ["rla"], doc: "Discard changes and reload all buffers from disk" },
   { name: "export-docx", aliases: ["docx", "export"], doc: "Export a styled .docx next to the file, or to the given path", args: "path" },
+  { name: "export-style", aliases: [], doc: "Pick the export style of the document, or name it (:export-style acme), in its front matter; reset removes it", args: "export-style" },
+  { name: "export-style-default", aliases: [], doc: "Set the export style of documents that name none, in ~/.config/md-editor/config.toml. Without an argument, shows it", args: "style-name" },
+  { name: "export-style-new", aliases: [], doc: "Start an export style, from the document's: :export-style-new acme, or :export-style-new acme project to share it in the project" },
+  { name: "export-style-open", aliases: [], doc: "Open the file of the document's export style, or of the one named, beside it", args: "style-name" },
+  { name: "export-preview", aliases: [], doc: "Toggle showing documents as their export style looks: fonts, colors and page width" },
+  { name: "export-help", aliases: [], doc: "Open the reference of document properties, export styles and their keys" },
   { name: "encoding", aliases: [], doc: "Set the encoding the file is saved in (utf-8, utf-16le, utf-16be, windows-1252). Without an argument, shows it", args: "encoding" },
   { name: "line-ending", aliases: [], doc: "Set the line endings the file is saved with: lf or crlf. Without an argument, shows them", args: "line-ending" },
   { name: "config-open", aliases: [], doc: "Open your Helix config.toml, and list the bindings in it this editor skips" },

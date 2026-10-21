@@ -31,7 +31,7 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   check("line numbers, the active one at the cursor after x", gutter.numbers > 5 && gutter.active.includes("8") && !gutter.active.includes("9"), gutter);
   await type(";");
   const offsets = await ev(() =>
-    [4, 6, 8].map((n) => {
+    [6, 8, 10].map((n) => {
       const v = app.view;
       const g = [...document.querySelectorAll(".cm-lineNumbers .cm-gutterElement")].find((e) => e.textContent === String(n))!;
       const { node } = v.domAtPos(v.state.doc.line(n).from + 1);

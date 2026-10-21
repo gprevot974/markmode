@@ -4,11 +4,12 @@
  *
  *   node scripts/build-docx.ts input.md output.docx
  *
- * CriticMarkup comments ({>>note<<}, {==highlight==}) are left out.
- *
- * Directives, single-line HTML comments in the markdown, set the footer, the
- * author and description properties, the subtitle and table column widths;
- * see src/directives.ts.
+ * How it looks comes from an export style (style.ts): colors, fonts, sizes,
+ * the page, and the rules that turn markdown into styled Word elements.
+ * The document's properties (title, author, footer, ...) come from its front
+ * matter (frontmatter.ts); table column widths from widths directives
+ * (directives.ts). CriticMarkup comments ({>>note<<}, {==highlight==}) are
+ * left out.
  */
 
 import {
@@ -31,21 +32,37 @@ import {
 } from "docx";
 import { stripComments } from "../criticmarkup.ts";
 import { fitWidths, parseDirective, parseWidths, widthsLineAbove } from "../directives.ts";
+import { frontMatter } from "../frontmatter.ts";
+import { defaultStyle, type ExportStyle } from "./style.ts";
 
 type Alignment = (typeof AlignmentType)[keyof typeof AlignmentType];
 
-// ── Brand palette ────────────────────────────────────────────────────────────
-const INDIGO = "203864"; // primary / headings
-const PAPRIKA = "DE5220"; // highlight / key figures
-const BALTIC = "537490"; // secondary / subheadings
-const PASTEL = "A1CAD7"; // accent / total rows
-const BALTIC_LIGHT = "D9E1E9"; // borders
-const ALT_ROW = "EDF2F6"; // derived light tint for banding
-const BODY = "1F1F1F";
-const WHITE = "FFFFFF";
+const PAGES = { letter: { width: 12240, height: 15840 }, a4: { width: 11906, height: 16838 } };
 
-const CONTENT_W = 10080; // Letter (12240) minus 1080 margins each side
-const FONT = "Calibri";
+/** A style's values, ready for the builders: colors, fonts, sizes in half-points, twips. */
+class Look {
+  readonly style: ExportStyle;
+  constructor(style: ExportStyle) {
+    this.style = style;
+  }
+  color = (name: string) => this.style[`colors.${name}`] as string;
+  font = (name: string) => this.style[`fonts.${name}`] as string;
+  /** Word counts font sizes in half-points. */
+  size = (name: string) => Math.round((this.style[`sizes.${name}`] as number) * 2);
+  rule = (name: string) => this.style[`rules.${name}`];
+  get page() {
+    return PAGES[this.style["page.size"] as keyof typeof PAGES];
+  }
+  margin = (side: string) => convertInchesToTwip(this.style[`page.margin-${side}`] as number);
+  /** The width between the margins. */
+  get contentWidth() {
+    return this.page.width - this.margin("left") - this.margin("right");
+  }
+  /** The label color for bold opening a block, unless labels are off. */
+  get label() {
+    return this.rule("bold-labels") ? this.color("label") : undefined;
+  }
+}
 
 // ── Inline markdown (**bold**, *italic*, `code`) ─────────────────────────────
 //
@@ -60,6 +77,7 @@ const FONT = "Calibri";
 // The distinction is positional: only a bold run at offset 0 is a label.
 interface RunOpts {
   size?: number;
+  font?: string;
   color?: string;
   bold?: boolean;
   italics?: boolean;
@@ -67,11 +85,11 @@ interface RunOpts {
   boldColor?: string;
 }
 
-function runs(text: string, opts: RunOpts = {}): TextRun[] {
+function runs(look: Look, text: string, opts: RunOpts = {}): TextRun[] {
   const base = {
-    font: FONT,
-    size: opts.size ?? 21,
-    color: opts.color ?? BODY,
+    font: opts.font ?? look.font("body"),
+    size: opts.size ?? look.size("body"),
+    color: opts.color ?? look.color("text"),
     bold: opts.bold ?? false,
     italics: opts.italics ?? false,
   };
@@ -93,7 +111,7 @@ function runs(text: string, opts: RunOpts = {}): TextRun[] {
         }),
       );
     } else if (tok.startsWith("`")) {
-      out.push(new TextRun({ ...base, text: tok.slice(1, -1), font: "Consolas", size: base.size - 2 }));
+      out.push(new TextRun({ ...base, text: tok.slice(1, -1), font: look.font("code"), size: base.size - 2 }));
     } else {
       out.push(new TextRun({ ...base, text: tok.slice(1, -1), italics: true }));
     }
@@ -113,29 +131,34 @@ interface ParaOpts extends RunOpts {
   indent?: { left?: number; hanging?: number };
 }
 
-const para = (text: string, opts: ParaOpts = {}) =>
+const para = (look: Look, text: string, opts: ParaOpts = {}) =>
   new Paragraph({
-    children: runs(text, { leadColor: INDIGO, ...opts }),
+    children: runs(look, text, { leadColor: look.label, ...opts }),
     alignment: opts.alignment,
     spacing: { after: opts.after ?? 140, line: 276 },
     keepNext: opts.keepNext,
     indent: opts.indent,
   });
 
-const sectionHeading = (text: string) =>
+const sectionHeading = (look: Look, text: string) =>
   new Paragraph({
-    children: runs(text, { size: 27, bold: true, color: INDIGO }),
+    children: runs(look, text, { font: look.font("headings"), size: look.size("heading"), bold: true, color: look.color("heading") }),
     heading: HeadingLevel.HEADING_1,
     spacing: { before: 360, after: 160 },
     keepNext: true,
-    border: {
-      bottom: { style: BorderStyle.SINGLE, size: 6, color: BALTIC_LIGHT, space: 6 },
-    },
+    border: look.rule("heading-rules")
+      ? { bottom: { style: BorderStyle.SINGLE, size: 6, color: look.color("rule"), space: 6 } }
+      : undefined,
   });
 
-const subHeading = (text: string) =>
+const subHeading = (look: Look, text: string) =>
   new Paragraph({
-    children: runs(text, { size: 23, bold: true, color: BALTIC }),
+    children: runs(look, text, {
+      font: look.font("headings"),
+      size: look.size("subheading"),
+      bold: true,
+      color: look.color("subheading"),
+    }),
     heading: HeadingLevel.HEADING_2,
     spacing: { before: 260, after: 110 },
     keepNext: true,
@@ -152,17 +175,17 @@ interface CellOpts {
   keepNext?: boolean;
 }
 
-function cell(text: string, o: CellOpts) {
+function cell(look: Look, text: string, o: CellOpts) {
   return new TableCell({
     width: { size: o.width, type: WidthType.DXA },
     shading: o.fill ? { type: ShadingType.CLEAR, fill: o.fill, color: "auto" } : undefined,
     margins: { top: 90, bottom: 90, left: 130, right: 130 },
     children: [
       new Paragraph({
-        children: runs(text, {
-          size: 19,
+        children: runs(look, text, {
+          size: look.size("table"),
           bold: o.bold,
-          color: o.color ?? BODY,
+          color: o.color ?? look.color("text"),
           leadColor: o.leadColor,
           boldColor: o.boldColor,
         }),
@@ -178,43 +201,50 @@ function cell(text: string, o: CellOpts) {
 }
 
 /** `set`: fractions from a widths directive. */
-function buildTable(rows: string[][], aligns: string[], set: number[] | null) {
+function buildTable(look: Look, rows: string[][], aligns: string[], set: number[] | null) {
   const nCols = rows[0].length;
+  const CONTENT_W = look.contentWidth;
   let widths: number[];
   if (set) widths = fitWidths(set, nCols).map((f) => Math.round(f * CONTENT_W));
-  else if (nCols === 4) widths = [2160, 2640, 2640, 2640];
-  else if (nCols === 2) widths = aligns[1] === "right" ? [8280, 1800] : [4000, 6080];
+  // Shares tuned for the letter page, for the tables proposals mostly have.
+  else if (nCols === 4) widths = [2160, 2640, 2640, 2640].map((w) => Math.round((w / 10080) * CONTENT_W));
+  else if (nCols === 2) widths = (aligns[1] === "right" ? [8280, 1800] : [4000, 6080]).map((w) => Math.round((w / 10080) * CONTENT_W));
   else widths = Array(nCols).fill(Math.floor(CONTENT_W / nCols));
 
   const headerEmpty = rows[0].every((c) => stripMd(c) === "");
+  const word = (look.rule("total-rows") as string).trim();
+  const total = word ? new RegExp(`\\*\\*${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i") : null;
+  const [header, headerText] = [look.color("table-header"), look.color("table-header-text")];
+  const [totalFill, totalText, text] = [look.color("table-total"), look.color("table-total-text"), look.color("text")];
+  const band = (n: number) => look.rule("table-bands") && n % 2 === 1;
   const body = headerEmpty ? rows.slice(1) : rows;
 
   const trs = body.map((cells, i) => {
     const isHeader = !headerEmpty && i === 0;
     const rowText = cells.join(" ");
-    const isTotal = /\*\*Total/i.test(rowText);
+    const isTotal = !!total && total.test(rowText);
 
     return new TableRow({
       tableHeader: isHeader,
       cantSplit: true,
       children: cells.map((c, j) =>
-        cell(c, {
+        cell(look, c, {
           keepNext: i < body.length - 1,
           width: widths[j],
-          fill: isHeader ? INDIGO : isTotal ? PASTEL : (headerEmpty ? i : i - 1) % 2 === 1 ? ALT_ROW : undefined,
+          fill: isHeader ? header : isTotal ? totalFill : band(headerEmpty ? i : i - 1) ? look.color("table-band") : undefined,
           bold: isHeader || isTotal,
-          color: isHeader ? WHITE : isTotal ? INDIGO : BODY,
+          color: isHeader ? headerText : isTotal ? totalText : text,
           // Header and total rows are uniformly colored already, so both bold
           // roles collapse to the row color there; body rows get the split.
-          leadColor: isHeader ? WHITE : INDIGO,
-          boldColor: isHeader ? WHITE : isTotal ? INDIGO : BODY,
+          leadColor: isHeader ? headerText : isTotal ? totalText : look.label,
+          boldColor: isHeader ? headerText : isTotal ? totalText : text,
           align: aligns[j] === "right" ? AlignmentType.RIGHT : undefined,
         }),
       ),
     });
   });
 
-  const edge = { style: BorderStyle.SINGLE, size: 4, color: BALTIC_LIGHT };
+  const edge = { style: BorderStyle.SINGLE, size: 4, color: look.color("rule") };
   return new Table({
     columnWidths: widths,
     width: { size: CONTENT_W, type: WidthType.DXA },
@@ -231,11 +261,15 @@ function buildTable(rows: string[][], aligns: string[], set: number[] | null) {
 }
 
 // ── Markdown parsing ─────────────────────────────────────────────────────────
-export function buildDocument(src: string): Document {
+export function buildDocument(src: string, style: ExportStyle = defaultStyle()): Document {
+  const look = new Look(style);
+  const CONTENT_W = look.contentWidth;
   // Comments are notes for the writers (and their agents), not for readers.
-  const lines = stripComments(src).split("\n");
+  const text = stripComments(src);
+  const lines = text.split("\n");
   const children: (Paragraph | Table)[] = [];
-  let i = 0;
+  const front = frontMatter(text);
+  let i = front?.endLine ?? 0;
   let olInstance = 0;
   let seenTitle = false;
 
@@ -244,27 +278,32 @@ export function buildDocument(src: string): Document {
     const d = parseDirective(l);
     if (d) directives[d.key] = d.value ?? true;
   }
-  const directive = (key: string) => (typeof directives[key] === "string" ? (directives[key] as string) : "");
-  // By default the first "##" after the "#" title is styled as a subtitle.
-  // A document whose first "##" is a real section opts out with <!-- no-subtitle -->.
-  let seenSubtitle = directives["no-subtitle"] === true;
+  // A property from the front matter, or from the directive it replaces.
+  const property = (key: string) => {
+    const value = front?.fields[key] ?? directives[key];
+    return typeof value === "string" ? value : "";
+  };
+  // With rules.subtitle, the first "##" after the "#" title is styled as a
+  // subtitle. A document whose first "##" is a real section opts out with
+  // `subtitle: false` (or the older <!-- no-subtitle -->).
+  let seenSubtitle = !look.rule("subtitle") || front?.fields.subtitle === false || directives["no-subtitle"] === true;
   // Document title property: the "#" heading, without markdown emphasis.
-  const titleLine = lines.find((l) => l.trim().startsWith("# "));
-  const docTitle = titleLine ? titleLine.trim().slice(2).replace(/[*_`]/g, "") : "";
-  // Footer text left of the page number, e.g. <!-- footer: Commercially confidential -->.
-  const footerText = directive("footer");
+  const titleLine = lines.slice(i).find((l) => l.trim().startsWith("# "));
+  const docTitle = property("title") || (titleLine ? titleLine.trim().slice(2).replace(/[*_`]/g, "") : "");
+  const footerText = property("footer");
 
   function flushParagraph(buf: string[]) {
     if (!buf.length) return;
     const joined = buf.join(" ").replace(/\s+/g, " ").trim();
     if (!joined) return;
     // Metadata block: each line is its own "**Label:** value" — keep the line breaks.
-    const allMeta = buf.every((l) => /^\*\*[^*]+:\*\*/.test(l.trim()));
+    const allMeta = look.rule("metadata-blocks") && buf.every((l) => /^\*\*[^*]+:\*\*/.test(l.trim()));
     if (allMeta && buf.length > 1) {
-      buf.forEach((l) => children.push(para(l.trim(), { size: 20, color: BALTIC, after: 40 })));
+      const muted = look.color("muted");
+      buf.forEach((l) => children.push(para(look, l.trim(), { size: look.size("metadata"), color: muted, after: 40 })));
       return;
     }
-    children.push(para(joined));
+    children.push(para(look, joined));
   }
 
   while (i < lines.length) {
@@ -291,7 +330,7 @@ export function buildDocument(src: string): Document {
     if (line.startsWith("# ")) {
       children.push(
         new Paragraph({
-          children: runs(line.slice(2), { size: 46, bold: true, color: INDIGO }),
+          children: runs(look, line.slice(2), { font: look.font("headings"), size: look.size("title"), bold: true, color: look.color("title") }),
           spacing: { after: 60 },
         }),
       );
@@ -303,23 +342,23 @@ export function buildDocument(src: string): Document {
       if (seenTitle && !seenSubtitle) {
         children.push(
           new Paragraph({
-            children: runs(line.slice(3), { size: 26, color: BALTIC }),
+            children: runs(look, line.slice(3), { font: look.font("headings"), size: look.size("subtitle"), color: look.color("subtitle") }),
             spacing: { after: 200 },
             border: {
-              bottom: { style: BorderStyle.SINGLE, size: 12, color: PAPRIKA, space: 10 },
+              bottom: { style: BorderStyle.SINGLE, size: 12, color: look.color("subtitle-rule"), space: 10 },
             },
           }),
         );
         children.push(new Paragraph({ text: "", spacing: { after: 160 } }));
         seenSubtitle = true;
       } else {
-        children.push(sectionHeading(line.slice(3)));
+        children.push(sectionHeading(look, line.slice(3)));
       }
       i++;
       continue;
     }
     if (line.startsWith("### ")) {
-      children.push(subHeading(line.slice(4)));
+      children.push(subHeading(look, line.slice(4)));
       i++;
       continue;
     }
@@ -342,7 +381,7 @@ export function buildDocument(src: string): Document {
       const sep = block[1] ?? "";
       const aligns = split(sep).map((s) => (s.endsWith(":") && !s.startsWith(":") ? "right" : "left"));
       const rows = block.filter((_, n) => n !== 1).map(split);
-      children.push(buildTable(rows, aligns, set));
+      children.push(buildTable(look, rows, aligns, set));
       // A tiny run rather than an empty paragraph: same visual gap, a third of
       // the vertical cost.
       children.push(
@@ -375,7 +414,7 @@ export function buildDocument(src: string): Document {
       items.forEach((item, n) =>
         children.push(
           new Paragraph({
-            children: runs(item, { leadColor: INDIGO }),
+            children: runs(look, item, { leadColor: look.label }),
             numbering: bullet
               ? { reference: "bullets", level: 0 }
               : { reference: "numbers", level: 0, instance },
@@ -405,9 +444,11 @@ export function buildDocument(src: string): Document {
 
   // ── Document ───────────────────────────────────────────────────────────────
   return new Document({
-    creator: directive("author"),
+    creator: property("author"),
     title: docTitle,
-    description: directive("description"),
+    description: property("description"),
+    subject: property("subject") || undefined,
+    keywords: property("keywords") || undefined,
     numbering: {
       config: [
         {
@@ -420,7 +461,7 @@ export function buildDocument(src: string): Document {
               alignment: AlignmentType.LEFT,
               style: {
                 paragraph: { indent: { left: 400, hanging: 220 } },
-                run: { color: PAPRIKA },
+                run: { color: look.color("accent") },
               },
             },
           ],
@@ -435,7 +476,7 @@ export function buildDocument(src: string): Document {
               alignment: AlignmentType.LEFT,
               style: {
                 paragraph: { indent: { left: 400, hanging: 220 } },
-                run: { color: PAPRIKA, bold: true },
+                run: { color: look.color("accent"), bold: true },
               },
             },
           ],
@@ -444,7 +485,7 @@ export function buildDocument(src: string): Document {
     },
     styles: {
       default: {
-        document: { run: { font: FONT, size: 21, color: BODY } },
+        document: { run: { font: look.font("body"), size: look.size("body"), color: look.color("text") } },
       },
       paragraphStyles: [
         {
@@ -454,7 +495,7 @@ export function buildDocument(src: string): Document {
           id: "FooterLine",
           name: "Footer Line",
           basedOn: "Normal",
-          run: { font: FONT, size: 16, color: BALTIC, bold: true },
+          run: { font: look.font("body"), size: look.size("footer"), color: look.color("muted"), bold: true },
         },
       ],
     },
@@ -462,12 +503,12 @@ export function buildDocument(src: string): Document {
       {
         properties: {
           page: {
-            size: { width: 12240, height: 15840 },
+            size: look.page,
             margin: {
-              top: convertInchesToTwip(0.85),
-              bottom: convertInchesToTwip(0.8),
-              left: convertInchesToTwip(0.75),
-              right: convertInchesToTwip(0.75),
+              top: look.margin("top"),
+              bottom: look.margin("bottom"),
+              left: look.margin("left"),
+              right: look.margin("right"),
             },
           },
         },
@@ -478,12 +519,12 @@ export function buildDocument(src: string): Document {
                 style: "FooterLine",
                 spacing: { before: 100 },
                 border: {
-                  top: { style: BorderStyle.SINGLE, size: 4, color: BALTIC_LIGHT, space: 6 },
+                  top: { style: BorderStyle.SINGLE, size: 4, color: look.color("rule"), space: 6 },
                 },
                 tabStops: [{ type: "right", position: CONTENT_W }],
                 children: [
-                  new TextRun({ text: footerText, font: FONT, size: 16, color: BALTIC, bold: false }),
-                  new TextRun({ text: "\t", font: FONT, size: 16 }),
+                  new TextRun({ text: footerText, font: look.font("body"), size: look.size("footer"), color: look.color("muted"), bold: false }),
+                  new TextRun({ text: "\t", font: look.font("body"), size: look.size("footer") }),
                   // Formatted by the FooterLine style: the field run itself carries none.
                   new SimpleField("PAGE", "1"),
                 ],
@@ -498,7 +539,7 @@ export function buildDocument(src: string): Document {
 }
 
 /** The .docx file for a markdown document, as bytes. Works in the browser and in Node. */
-export async function markdownToDocx(src: string): Promise<Uint8Array> {
-  const blob = await Packer.toBlob(buildDocument(src));
+export async function markdownToDocx(src: string, style?: ExportStyle): Promise<Uint8Array> {
+  const blob = await Packer.toBlob(buildDocument(src, style));
   return new Uint8Array(await blob.arrayBuffer());
 }

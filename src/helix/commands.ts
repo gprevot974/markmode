@@ -85,6 +85,8 @@ export interface Host {
   jumpForward(count: number): void;
   saveSelection(): void;
   jumplistPicker(): void;
+  /** `C-x` in insert mode: the keys and values that fit at the cursor, where there are any. */
+  complete(view: EditorView): void;
   gotoBuffer(which: "next" | "previous" | "last"): void;
   windowCommand(cmd: WindowCommand): void;
 }
@@ -1046,6 +1048,7 @@ export const commands: Record<string, Command> = {
   jump_forward: ({ host, count }) => host.jumpForward(count),
   save_selection: ({ host }) => host.saveSelection(),
   jumplist_picker: ({ host }) => host.jumplistPicker(),
+  completion: ({ host, view }) => host.complete(view),
 
   file_picker: ({ host }) => host.filePicker(false),
   file_picker_in_current_directory: ({ host }) => host.filePicker(true),

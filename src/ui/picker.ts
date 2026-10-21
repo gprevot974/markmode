@@ -31,6 +31,10 @@ export interface PickerOptions<T> {
   /** A class for an item's row. */
   rowClass?(item: T): string;
   onSelect(item: T, how: OpenHow): void;
+  /** The item the selection is on, each time it moves to another (null with none): to show it live, as `:theme` does. */
+  onHighlight?(item: T | null): void;
+  /** The picker closed, chosen from or not; called before `onSelect`. */
+  onClose?(): void;
 }
 
 const PREVIEW_LINES = 1000;
@@ -70,6 +74,7 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   let top = 0;
   let loading = true;
   let previewGen = 0;
+  let current: T | null | undefined;
   const previewCache = new Map<T, Preview | null>();
 
   const rowHeight = () => (list.firstElementChild as HTMLElement | null)?.offsetHeight || 22;
@@ -170,6 +175,8 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
     });
     list.replaceChildren(...children);
     void showPreview();
+    const item = rows[selected]?.item ?? null;
+    if (item !== current && !loading) opts.onHighlight?.((current = item));
   }
 
   async function showPreview() {
@@ -209,6 +216,7 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
     root.remove();
     window.removeEventListener("resize", render);
     refocus();
+    opts.onClose?.();
   }
 
   function choose(how: OpenHow) {

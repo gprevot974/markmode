@@ -72,6 +72,8 @@ export const normalKeys: KeyTrie = {
   G: "goto_line",
   "C-o": "jump_backward",
   "C-i": "jump_forward",
+  // Helix's decrement, which this editor lacks: completion, as in insert mode.
+  "C-x": "completion",
   tab: "jump_forward",
   "C-s": "save_selection",
 
@@ -215,6 +217,7 @@ export const insertKeys: KeyTrie = {
   "C-w": "delete_word_backward",
   "A-backspace": "delete_word_backward",
   "C-u": "kill_to_line_start",
+  "C-x": "completion",
 };
 
 /** Deep-merges user bindings over defaults, like Helix does with config.toml. */

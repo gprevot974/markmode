@@ -20,7 +20,8 @@ working on, read it rendered, edit it the Helix way, and export a formatted
 - **Safe with your files**: saves are atomic, encodings and line endings are
   kept as found, and unsaved changes survive a crash (see [Files](#files)).
 - **Export**: `:export-docx` (or `space e`) writes `name.docx` next to `name.md`,
-  styled by the same code as the old `build-docx.js`.
+  in an export style: built in, your own or the project's, as TOML files you
+  can edit here, with the document shown in it as you do (see [Export](#export)).
 
 ## Running
 
@@ -45,7 +46,7 @@ That's useful when working on the editor itself.
 Export without the app:
 
 ```bash
-node scripts/build-docx.ts input.md [output.docx]
+node scripts/build-docx.ts input.md [output.docx] [--style name]
 ```
 
 ## Commands
@@ -63,10 +64,13 @@ node scripts/build-docx.ts input.md [output.docx]
 | `:history` | earlier versions of the file (`space h`) |
 | `:theme [name]` | show or change the theme |
 | `:zoom [in\|out\|reset\|percent]` | text size |
-| `:table-widths [widths\|reset]` | set the column widths of the table at the cursor (see [Directives](#directives)) |
+| `:table-widths [widths\|reset]` | set the column widths of the table at the cursor (see [Export](#export)) |
 | `:reflow [width]` | hard-wrap the selected lines, or the paragraph at the cursor, to `text-width` (80) |
 | `:config-open` | open your Helix config.toml |
 | `:export-docx [path]` | export to Word |
+| `:export-style [name\|reset]`, `:export-style-default [name]` | pick the document's export style; the one for documents naming none |
+| `:export-style-new <name> [project]`, `:export-style-open [name]` | start an export style, edit one |
+| `:export-preview`, `:export-help` | show documents in their export style; the export reference |
 | `:<n>` | go to line *n* |
 
 macOS shortcuts also work: ⌘S save, ⌘O open, ⌘⇧E export, ⌘= and ⌘- zoom in and
@@ -263,37 +267,177 @@ what is inside it, Enter on a file runs the command. `/`, `?`, `s` and `S`
 preview their result as you type, and Esc restores the selection.
 
 Insert mode keeps CodeMirror's editing (with the macOS Emacs keys) and adds
-`C-w`, `C-u` and `jk`. Pressing Enter in a list continues it.
+`C-w`, `C-u` and `jk`, and `C-x`, which completes keys and values in front
+matter and export styles (in normal mode too, where Helix has decrement, which
+this editor lacks). Pressing Enter in a list continues it.
+
+Files other than markdown (an export style, config.toml) open as plain text,
+highlighted, without the preview.
 
 Change bindings in your Helix config.toml, or in `src/config.ts`. It uses config.toml's shape and Helix's
 command names; see `src/helix/keymap.ts` for the defaults and `src/helix/commands.ts`
 for every command.
 
-## Directives
+## Export
 
-Single-line HTML comments set properties of the document, or of the table
-under them. Other renderers hide them; the live preview shows them as small
-labels (and their source on the cursor's line), and the docx export follows
-them:
+`:export-docx` writes a Word document. What it looks like comes from an
+**export style**; what it says about itself (title, author, footer) comes from
+the document's front matter. `:export-preview` shows each document as its
+style looks, on a page of its width, and keeps up as you edit the document or
+the style. `:export-help` opens this reference in the editor.
 
-```markdown
-<!-- footer: Commercially confidential -->
-<!-- author: Your Name -->
-<!-- description: Project proposal -->
-<!-- no-subtitle -->
-<!-- widths: 20 30 50 -->
+Your own styles live in `~/.config/md-editor/styles/`. `:export-style-new acme`
+starts one from the document's current style, with every key written out and
+commented. It opens beside the document, so with the preview on, each change
+shows as you type it. `:export-style acme` uses it for the document, and
+`:export-style-default acme` for every document that names none.
+
+Column widths stay a directive, on the line above their table, since they
+belong to it. The older `footer`, `author`, `description` and `no-subtitle`
+directives still work, but front matter replaces them.
+
+The README's copy of the reference is generated: after changing a key, run
+`npm run docs` (a unit test fails until then).
+
+<!-- export-reference -->
+
+### Document properties
+
+Front matter at the top of the file sets the document's properties. Other keys are left alone, for other tools.
+
+```yaml
+---
+title: Project proposal
+author: Jane Doe
+footer: Commercially confidential
+style: acme
+---
 ```
 
-By default the first `##` after the `#` title is styled as a subtitle;
-`no-subtitle` turns that off. `widths`, on the line above a table (blank lines
-between are fine), sets its column widths, relative to each other, in the
-preview and the export. Drag the border between two columns in the preview
-to write it, or use `:table-widths 20 30 50`; `:table-widths` alone writes the
-widths the table shows, and `:table-widths reset` removes them.
+| Key | What it sets |
+| --- | --- |
+| `title` | The document's title property; without it, the `#` heading's text |
+| `subtitle` | false: the first `##` is a section, not a subtitle under the title |
+| `author` | The document's author property |
+| `description` | The document's description property (Comments, in Word) |
+| `subject` | The document's subject property |
+| `keywords` | The document's keywords property, separated by commas |
+| `footer` | Footer text, left of the page number |
+| `style` | The export style (:export-style picks one) |
 
-In the export, bold text that opens a paragraph, list item or table row is
-colored as a label. A table row starting with `**Total` gets the total-row
-style.
+A table's column widths are set by a directive on the line above it, `<!-- widths: 20 30 50 -->`. Dragging the column borders in the preview writes one, as does `:table-widths`.
+
+### Export styles
+
+An export style sets how the docx export looks. It's a TOML file named after the style, in one of these places, most specific first:
+
+- `.md-editor/styles/` at the root of the project (the folder holding `.git`), to share it with the project
+- `~/.config/md-editor/styles/`, for your own
+- built in:
+
+| Style | Looks |
+| --- | --- |
+| `default` | Slate headings and tables, blue accents |
+| `plain` | Black and gray, no fills: for printing, or for restyling in Word |
+
+A document uses the style named by `style:` in its front matter. Without one, it uses `[export] style` in the `config.toml` next to `styles/` (the project's first), and otherwise `default`.
+
+| Command | What it does |
+| --- | --- |
+| `:export-style` | Pick the document's style, seeing each in the window as you move through them, or name it (`reset` removes it) |
+| `:export-style-default` | Show or set the style for documents without one, in `~/.config/md-editor/config.toml` |
+| `:export-style-new <name>` | Start a style from the document's style, with every key commented out; `project` after the name puts it in the project |
+| `:export-style-open` | Edit the style's file, here |
+| `:export-preview` | Show the document as the style exports it: its fonts, colors and page width |
+| `:export-help` | This reference |
+
+Every key is optional. A style starts from the one named by `inherits` (`default` if it has none), and a style inheriting its own name extends the one it hides. In a style file or the front matter, `C-x` lists the keys and values that fit where the cursor is: in insert mode, for what is typed before it; in normal mode, for the line's value, or else its key.
+
+```toml
+inherits = "default"
+description = "Our letterhead colors"
+
+[colors]
+heading = "#203864"
+accent = "#DE5220"
+
+[rules]
+table-bands = false
+```
+
+#### [page]
+
+Paper and margins.
+
+| Key | Default | What it sets |
+| --- | --- | --- |
+| `size` | `"letter"` | Paper size (letter, a4) |
+| `margin-top` | `0.85` | Top margin, in inches |
+| `margin-bottom` | `0.8` | Bottom margin, in inches |
+| `margin-left` | `0.75` | Left margin, in inches |
+| `margin-right` | `0.75` | Right margin, in inches |
+
+#### [fonts]
+
+Font families; a font missing on the reader's computer falls back to one Word picks.
+
+| Key | Default | What it sets |
+| --- | --- | --- |
+| `body` | `"Calibri"` | Paragraphs, lists and tables |
+| `headings` | `"Calibri"` | The title, subtitle and headings |
+| `code` | `"Consolas"` | `Inline code` |
+
+#### [sizes]
+
+Font sizes, in points.
+
+| Key | Default | What it sets |
+| --- | --- | --- |
+| `body` | `10.5` | Paragraphs and lists |
+| `title` | `23` | The `#` title |
+| `subtitle` | `13` | The subtitle (see rules.subtitle) |
+| `heading` | `13.5` | `##` headings |
+| `subheading` | `11.5` | `###` headings and below |
+| `table` | `9.5` | Table text |
+| `metadata` | `10` | Metadata blocks (see rules.metadata-blocks) |
+| `footer` | `8` | The footer |
+
+#### [colors]
+
+Colors, as "#RRGGBB".
+
+| Key | Default | What it sets |
+| --- | --- | --- |
+| `text` | `"#1F2328"` | Body text, and bold in the middle of a sentence |
+| `title` | `"#1E293B"` | The `#` title |
+| `subtitle` | `"#475569"` | The subtitle |
+| `subtitle-rule` | `"#2563EB"` | The line under the subtitle |
+| `heading` | `"#1E293B"` | `##` headings |
+| `subheading` | `"#475569"` | `###` headings and below |
+| `label` | `"#1E293B"` | Bold opening a paragraph, list item or table row (see rules.bold-labels) |
+| `accent` | `"#2563EB"` | Bullets and list numbers |
+| `muted` | `"#64748B"` | Metadata blocks and the footer |
+| `rule` | `"#CBD5E1"` | Lines under headings, table borders and the line over the footer |
+| `table-header` | `"#1E293B"` | Background of a table's header row |
+| `table-header-text` | `"#FFFFFF"` | Text of a table's header row |
+| `table-band` | `"#F1F5F9"` | Background of every other body row (see rules.table-bands) |
+| `table-total` | `"#E2E8F0"` | Background of total rows (see rules.total-rows) |
+| `table-total-text` | `"#1E293B"` | Text of total rows |
+
+#### [rules]
+
+How markdown turns into styled Word elements.
+
+| Key | Default | What it sets |
+| --- | --- | --- |
+| `subtitle` | `true` | The first `##` after the title is a subtitle under it, not a section. A document turns it off with `subtitle: false` in its front matter |
+| `bold-labels` | `true` | Bold opening a paragraph, list item or table row is a label, in colors.label; bold elsewhere stays colors.text |
+| `metadata-blocks` | `true` | A paragraph whose every line is `**Label:** value` keeps its lines, smaller and in colors.muted |
+| `total-rows` | `"Total"` | Table rows holding bold text that starts with this word are total rows; empty for none |
+| `table-bands` | `true` | Every other body row of a table gets colors.table-band |
+| `heading-rules` | `true` | A line under `##` headings, in colors.rule |
+
+<!-- /export-reference -->
 
 ## Layout
 
@@ -305,15 +449,17 @@ src/history.ts    the version history picker
 src/outline.ts    headings, for the heading pickers
 src/jumplist.ts   the jumplist (C-o, C-i)
 src/reflow.ts     :reflow
-src/directives.ts directives: footer, author, widths... (read by the preview and the export)
+src/frontmatter.ts  front matter: the document's properties
+src/directives.ts directives: table widths (and the older footer, author...)
 src/preview/      live preview decorations and table rendering
-src/export/       markdown → docx
+src/export/       markdown → docx, export styles (style.ts: every key), their files and reference
 src/theme/        Kanagawa, Helix themes, light and dark
 src/helixConfig.ts  reading ~/.config/helix/config.toml
 src/fileformat.ts line endings and encodings
 src/backend.ts    files, dialogs, clipboard (Tauri, or an in-memory stand-in in a browser)
 src-tauri/        the Rust shell: file I/O, the file watcher, crash recovery, version history, spelling
 tests/            unit tests (vitest), and tests/e2e: the editor in Chrome
+scripts/          the command-line export; docs.ts writes the export reference into this README
 docs/             the roadmap
 ```
 
@@ -326,13 +472,13 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 The unit tests cover the ported Helix motions and text objects, the docx
-output, line endings, Helix themes and config, the prose diff, CriticMarkup,
+output, export styles, front matter, line endings, Helix themes and config, the prose diff, CriticMarkup,
 the history preview, reflow, headings and the jumplist. The browser tests run the
 editor in Chrome against the in-memory backend with real key presses: live
 preview, windows, buffers, pickers, spelling, themes, line endings, crash
 recovery (a page reload stands in for a restart), reviewing outside changes
 (across two windows too), comments, version history, zoom, moving by rows,
-`o`/`O`, the heading pickers, the jumplist, and a
+`o`/`O`, the heading pickers, the jumplist, export styles and the export preview, and a
 120,000-line file, with timings. They use the installed Chrome, or
 `CHROME_PATH`. The Rust tests cover encodings, atomic writes and the version
 history. CI runs all three on macOS.
