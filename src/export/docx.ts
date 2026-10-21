@@ -6,11 +6,9 @@
  *
  * CriticMarkup comments ({>>note<<}, {==highlight==}) are left out.
  *
- * Build directives are single-line HTML comments in the markdown:
- *   <!-- footer: Commercially confidential -->  text left of the page number
- *   <!-- no-subtitle -->                        first "##" is a real section
- *   <!-- author: Name -->                       document author property
- *   <!-- description: Project proposal -->      document description property
+ * Directives, single-line HTML comments in the markdown, set the footer, the
+ * author and description properties, the subtitle and table column widths;
+ * see src/directives.ts.
  */
 
 import {
@@ -32,6 +30,7 @@ import {
   convertInchesToTwip,
 } from "docx";
 import { stripComments } from "../criticmarkup.ts";
+import { fitWidths, parseDirective, parseWidths, widthsLineAbove } from "../directives.ts";
 
 type Alignment = (typeof AlignmentType)[keyof typeof AlignmentType];
 
@@ -178,10 +177,12 @@ function cell(text: string, o: CellOpts) {
   });
 }
 
-function buildTable(rows: string[][], aligns: string[]) {
+/** `set`: fractions from a widths directive. */
+function buildTable(rows: string[][], aligns: string[], set: number[] | null) {
   const nCols = rows[0].length;
   let widths: number[];
-  if (nCols === 4) widths = [2160, 2640, 2640, 2640];
+  if (set) widths = fitWidths(set, nCols).map((f) => Math.round(f * CONTENT_W));
+  else if (nCols === 4) widths = [2160, 2640, 2640, 2640];
   else if (nCols === 2) widths = aligns[1] === "right" ? [8280, 1800] : [4000, 6080];
   else widths = Array(nCols).fill(Math.floor(CONTENT_W / nCols));
 
@@ -238,11 +239,10 @@ export function buildDocument(src: string): Document {
   let olInstance = 0;
   let seenTitle = false;
 
-  // Build directives are single-line HTML comments: <!-- key --> or <!-- key: value -->.
   const directives: Record<string, string | true> = {};
   for (const l of lines) {
-    const m = l.trim().match(/^<!--\s*([\w-]+)\s*(?::\s*(.*?))?\s*-->$/);
-    if (m) directives[m[1]] = m[2] ?? true;
+    const d = parseDirective(l);
+    if (d) directives[d.key] = d.value ?? true;
   }
   const directive = (key: string) => (typeof directives[key] === "string" ? (directives[key] as string) : "");
   // By default the first "##" after the "#" title is styled as a subtitle.
@@ -326,6 +326,8 @@ export function buildDocument(src: string): Document {
 
     // Tables
     if (line.startsWith("|")) {
+      const widthsAt = widthsLineAbove((n) => lines[n - 1], i + 1);
+      const set = widthsAt ? parseWidths(parseDirective(lines[widthsAt - 1])?.value ?? "") : null;
       const block: string[] = [];
       while (i < lines.length && lines[i].trim().startsWith("|")) {
         block.push(lines[i].trim());
@@ -340,7 +342,7 @@ export function buildDocument(src: string): Document {
       const sep = block[1] ?? "";
       const aligns = split(sep).map((s) => (s.endsWith(":") && !s.startsWith(":") ? "right" : "left"));
       const rows = block.filter((_, n) => n !== 1).map(split);
-      children.push(buildTable(rows, aligns));
+      children.push(buildTable(rows, aligns, set));
       // A tiny run rather than an empty paragraph: same visual gap, a third of
       // the vertical cost.
       children.push(

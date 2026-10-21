@@ -13,19 +13,22 @@ import { selectionDecorations } from "./helix/cursor.ts";
 import { cursorLines } from "./helix/cursorline.ts";
 import { jumpLabels } from "./helix/jumplabels.ts";
 import { commands, type Host, type WindowCommand } from "./helix/commands.ts";
-import { livePreview } from "./preview/livePreview.ts";
+import { livePreview, setTableWidths, tableWidths } from "./preview/livePreview.ts";
 import { spellcheck } from "./spell.ts";
 import { comments } from "./comments.ts";
 import { asChange, changesOf, endReview, originalOf, replayed, reviewEffects, reviewing, reviewSlot, startReview } from "./review.ts";
 import { describeSnapshot, diffPreview } from "./history.ts";
 import { initZoom, setZoom, zoomLevel, zoomStep } from "./ui/zoom.ts";
 import { reflow } from "./reflow.ts";
+import { type Heading, headings } from "./outline.ts";
+import { clampSelection, type Jump, JumpList } from "./jumplist.ts";
 import type { Snapshot, SnapshotKind } from "./backend.ts";
 import { kanagawa } from "./theme/kanagawa.ts";
 import { currentTheme, endThemePreview, initTheme, previewTheme, setTheme, themeNames } from "./theme/appearance.ts";
 import { applyHelixConfig } from "./helixConfig.ts";
 import { openPrompt, type Completion, type PromptOptions } from "./ui/prompt.ts";
 import { openPicker, type OpenHow } from "./ui/picker.ts";
+import { fuzzyFilter } from "./ui/fuzzy.ts";
 import { renderInfobox } from "./ui/infobox.ts";
 import { Layout, type Split, type SplitDir, type Tile } from "./ui/layout.ts";
 import { findTypable, matchTypables, typables } from "./typable.ts";
@@ -54,6 +57,9 @@ function diffChange(a: string, b: string) {
   while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
   return { from: start, to: a.length - end, insert: b.slice(start, b.length - end) };
 }
+
+/** At most this many files are read for the headings picker across files (`space S`). */
+const MAX_HEADING_FILES = 2000;
 
 /** How long after the last edit the crash-recovery copies are written. */
 const RECOVERY_DELAY = 1000;
@@ -97,6 +103,8 @@ class Win implements Tile {
   doc: Doc;
   readonly view: EditorView;
   readonly sl: Record<"mode" | "file" | "sels" | "format" | "pos", HTMLElement>;
+  /** Where C-o goes back to. */
+  jumps = new JumpList<Doc>();
 
   constructor(doc: Doc, state: EditorState, onTransactions: (win: Win, trs: readonly Transaction[]) => void) {
     this.doc = doc;
@@ -231,6 +239,7 @@ class App implements Host {
     this.docs.splice(this.docs.indexOf(doc), 1);
     if (this.recovered.delete(doc)) void backend.recoveryRemove(doc.id).catch(() => {});
     if (doc.path) void backend.unwatch(doc.path);
+    for (const w of this.layout?.windows() ?? []) w.jumps.remove(doc);
   }
 
   private watch(path: string) {
@@ -261,10 +270,11 @@ class App implements Host {
     return [...this.docs].sort((a, b) => b.lastAccess - a.lastAccess);
   }
 
-  /** Shows a document in a window, keeping the one it replaces as a buffer. */
-  show(win: Win, doc: Doc) {
+  /** Shows a document in a window, keeping the one it replaces as a buffer. Switching documents is a jump, as in Helix. */
+  show(win: Win, doc: Doc, jump = true) {
     const old = win.doc;
     if (old === doc) return;
+    if (jump && this.docs.includes(old)) win.jumps.push({ doc: old, selection: win.view.state.selection });
     if (!this.windowsShowing(old).some((w) => w !== win)) old.state = win.view.state;
     // Another window already editing it has the live text; this one gets its
     // own state on that text, kept in step by `afterTransactions`.
@@ -381,6 +391,9 @@ class App implements Host {
     if (trs.some((tr) => tr.docChanged)) this.scheduleRecovery();
     let reviewed = false;
     for (const tr of trs) {
+      if (tr.docChanged && !tr.annotation(replayed)) {
+        for (const w of this.layout?.windows() ?? []) w.jumps.map(win.doc, tr.changes);
+      }
       const effects = reviewEffects(tr);
       reviewed ||= tr.docChanged || effects.length > 0;
       if ((!tr.docChanged && !effects.length) || tr.annotation(replayed)) continue;
@@ -417,6 +430,7 @@ class App implements Host {
     const from = this.active;
     const { state } = from.view;
     const win = this.createWindow(from.doc, this.createState(state.doc, state.selection, reviewOriginal(state)));
+    win.jumps = from.jumps.clone();
     this.layout.split(from, win, dir);
     win.view.dispatch({ effects: from.view.scrollSnapshot() });
     this.focus(win);
@@ -556,20 +570,20 @@ class App implements Host {
     const typable = findTypable(line.slice(0, space).replace(/!$/, ""));
     const arg = line.slice(space + 1);
     const choices = (names: string[]) =>
-      names.filter((n) => n.startsWith(arg)).map((n) => ({ insert: n, from: space + 1, label: n }));
+      fuzzyFilter(arg, names, (n) => n).map((n) => ({ insert: n, from: space + 1, label: n }));
     if (typable?.args === "theme") return choices(await themeNames());
     if (typable?.args === "encoding") return choices(encodings);
     if (typable?.args === "line-ending") return choices(lineEndings);
     if (typable?.args === "zoom") return choices(["in", "out", "reset", "100", "125", "150"]);
+    if (typable?.args === "table-widths") return choices(["reset"]);
     if (typable?.args !== "path") return [];
     const slash = arg.lastIndexOf("/");
     const dirPart = arg.slice(0, slash + 1);
     const prefix = arg.slice(slash + 1);
     const dir = this.resolve(dirPart || ".");
     const entries = await backend.listDir(dir).catch(() => []);
-    return entries
-      .filter((e) => e.name.toLowerCase().startsWith(prefix.toLowerCase()))
-      .filter((e) => prefix.startsWith(".") || !e.name.startsWith("."))
+    const shown = entries.filter((e) => prefix.startsWith(".") || !e.name.startsWith("."));
+    return fuzzyFilter(prefix, shown, (e) => e.name)
       .map((e) => {
         const name = e.isDir ? `${e.name}/` : e.name;
         return { insert: dirPart + name, from: space + 1, label: name, partial: e.isDir };
@@ -726,6 +740,19 @@ class App implements Host {
           if (!(width > 0)) return this.message("reflow: a width in characters", "error");
           return this.reflow(width);
         }
+        case "table-widths": {
+          const view = this.view;
+          const pos = view.state.selection.main.head > view.state.selection.main.anchor ? view.state.selection.main.head - 1 : view.state.selection.main.head;
+          let widths: number[] | null;
+          if (arg === "reset") widths = null;
+          else if (arg) {
+            const numbers = arg.split(/[\s,]+/).map((n) => parseFloat(n.replace(/%$/, "")));
+            if (numbers.some((n) => !(n > 0))) return this.message("table-widths: widths as numbers, like 20 30 50", "error");
+            widths = numbers;
+          } else widths = tableWidths(view, pos);
+          if (!setTableWidths(view, pos, widths)) return this.message("table-widths: the cursor is not in a table", "error");
+          return;
+        }
         case "reset-diff-change":
           return await this.runCommand("reject_change");
         case "accept-all-changes":
@@ -801,6 +828,7 @@ class App implements Host {
     if (!n) return;
     const { doc } = this.view.state;
     const line = doc.line(Math.max(1, Math.min(n, doc.lines)));
+    this.pushJump(this.view, this.view.state.selection);
     this.view.dispatch({ selection: EditorSelection.cursor(line.from), scrollIntoView: true });
   }
 
@@ -1100,6 +1128,174 @@ class App implements Host {
     this.renderAllStatus();
     if (!changes) return this.message("that version is the current text");
     this.message(`brought back the version from ${when}: ${reviewHint(changes)}; :w writes it`);
+  }
+
+  // ── Headings ───────────────────────────────────────────────────────────────
+
+  /**
+   * `space s`: the headings of the current document, to jump to a section.
+   * `space S`: the headings of every markdown file under the workspace root,
+   * as `space f` lists them.
+   */
+  async headingPicker(workspace: boolean) {
+    const doc = this.active.doc;
+    if (!workspace) {
+      const text = this.stateOf(doc).doc.toString();
+      openPicker<Heading>(
+        {
+          title: `headings of ${this.docName(doc)}`,
+          items: headings(text),
+          text: (h) => h.title,
+          tree: { depth: (h) => h.path.length - 1, parent: (h) => h.parent },
+          preview: (h) => ({ text, line: h.line }),
+          onSelect: (h, how) => this.gotoHeading(doc, h.line, how),
+        },
+        () => this.view.focus(),
+      );
+      return;
+    }
+    const base = this.baseDir();
+    const root = await backend.workspaceRoot(base).catch(() => base);
+    const join = (rel: string) => (root.endsWith("/") ? root : root + "/") + rel;
+    // Each file, then its headings under it.
+    type Entry = { path: string; rel: string; text: string; heading: Heading | null; file: Entry | null };
+    const entries = new Map<Heading, Entry>();
+    const items = async (): Promise<Entry[]> => {
+      const files = (await backend.listFiles(root)).filter((rel) => /\.(?:md|markdown|mdx?)$/i.test(rel)).slice(0, MAX_HEADING_FILES);
+      const read = await Promise.all(
+        files.map(async (rel) => {
+          const path = join(rel);
+          const open = this.docs.find((d) => d.path === path);
+          if (open) return { path, rel, text: this.stateOf(open).doc.toString() };
+          try {
+            const disk = await backend.readText(path);
+            return { path, rel, text: fromDisk(disk.text, disk.format).text };
+          } catch {
+            return { path, rel, text: "" };
+          }
+        }),
+      );
+      return read.flatMap((f) => {
+        const file: Entry = { ...f, heading: null, file: null };
+        const under = headings(f.text).map((heading) => {
+          const entry = { ...f, heading, file };
+          entries.set(heading, entry);
+          return entry;
+        });
+        return [file, ...under];
+      });
+    };
+    openPicker<Entry>(
+      {
+        title: `headings under ${this.home && root.startsWith(this.home) ? "~" + root.slice(this.home.length) : root}`,
+        items: items(),
+        text: (e) => e.heading?.title ?? e.rel,
+        tree: {
+          depth: (e) => (e.heading ? e.heading.path.length : 0),
+          parent: (e) => (e.heading ? (e.heading.parent ? entries.get(e.heading.parent)! : e.file) : null),
+        },
+        rowClass: (e) => (e.heading ? "" : "pk-group"),
+        preview: (e) => ({ text: e.text, line: e.heading?.line ?? 1 }),
+        onSelect: (e, how) => {
+          const line = e.heading?.line ?? 1;
+          const open = this.docs.find((d) => d.path === e.path);
+          if (open && open === this.active.doc) return this.gotoHeading(open, line, how);
+          void this.openPath(e.path, how)
+            .then(() => e.heading && this.selectLine(this.active, line))
+            .catch((err) => this.message(String(err), "error"));
+        },
+      },
+      () => this.view.focus(),
+    );
+  }
+
+  private gotoHeading(doc: Doc, line: number, how: OpenHow) {
+    if (!this.docs.includes(doc)) return;
+    this.pushJump(this.view, this.view.state.selection);
+    const win = how === "replace" ? this.active : this.split(how === "vsplit" ? "row" : "column");
+    this.show(win, doc);
+    this.selectLine(win, line);
+    this.focus(win);
+  }
+
+  /** Puts the cursor at the start of a line, with the line near the top of the window: the start of a section. */
+  private selectLine(win: Win, n: number) {
+    const { doc } = win.view.state;
+    const line = doc.line(Math.max(1, Math.min(n, doc.lines)));
+    win.view.dispatch({
+      selection: EditorSelection.cursor(line.from),
+      effects: EditorView.scrollIntoView(line.from, { y: "start", yMargin: 48 }),
+      userEvent: "select",
+    });
+  }
+
+  // ── Jumplist ───────────────────────────────────────────────────────────────
+
+  pushJump(view: EditorView, before: EditorSelection) {
+    const win = this.layout.windows().find((w) => w.view === view);
+    if (win) win.jumps.push({ doc: win.doc, selection: before });
+  }
+
+  jumpBackward(count: number) {
+    const win = this.active;
+    const jump = win.jumps.backward({ doc: win.doc, selection: win.view.state.selection }, count);
+    if (!jump) return this.message("no earlier jump");
+    this.goJump(win, jump);
+  }
+
+  jumpForward(count: number) {
+    const win = this.active;
+    const jump = win.jumps.forward(count);
+    if (!jump) return this.message("no later jump");
+    this.goJump(win, jump);
+  }
+
+  saveSelection() {
+    const win = this.active;
+    win.jumps.push({ doc: win.doc, selection: win.view.state.selection });
+    this.message("selection saved to the jumplist");
+  }
+
+  private goJump(win: Win, jump: Jump<Doc>) {
+    if (!this.docs.includes(jump.doc)) return;
+    this.show(win, jump.doc, false);
+    const { view } = win;
+    const selection = clampSelection(jump.selection, view.state.doc.length);
+    const head = selection.main.head;
+    const visible = view.visibleRanges.some((r) => head >= r.from && head <= r.to);
+    view.dispatch({
+      selection,
+      effects: visible ? [] : EditorView.scrollIntoView(head, { y: "center" }),
+      userEvent: "select",
+    });
+  }
+
+  /** The jumplist of the current window, latest first; Enter goes there. */
+  jumplistPicker() {
+    const win = this.active;
+    const jumps = [...win.jumps.jumps].reverse().filter((j) => this.docs.includes(j.doc));
+    const lineOf = (j: Jump<Doc>) => {
+      const { doc } = this.stateOf(j.doc);
+      return doc.lineAt(Math.min(j.selection.main.head, doc.length));
+    };
+    openPicker<Jump<Doc>>(
+      {
+        title: "jumplist",
+        items: jumps,
+        text: (j) => {
+          const line = lineOf(j);
+          return `${this.docName(j.doc)}:${line.number}  ${line.text.trim().slice(0, 100)}`;
+        },
+        preview: (j) => ({ text: this.stateOf(j.doc).doc.toString(), line: lineOf(j).number }),
+        onSelect: (j, how) => {
+          this.pushJump(this.view, this.view.state.selection);
+          const target = how === "replace" ? this.active : this.split(how === "vsplit" ? "row" : "column");
+          this.goJump(target, j);
+          this.focus(target);
+        },
+      },
+      () => this.view.focus(),
+    );
   }
 
   // ── Zoom ───────────────────────────────────────────────────────────────────

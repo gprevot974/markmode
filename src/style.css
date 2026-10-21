@@ -248,6 +248,13 @@ body {
 .cursorline .cm-activeLine .hx-jump::after {
   background: var(--cursorline);
 }
+/* A label takes its cell's background, to hide what a wide label overlaps. */
+.md-table th .hx-jump::after {
+  background: var(--bg-line);
+}
+.md-table-even td .hx-jump::after {
+  background: color-mix(in srgb, var(--bg-line) 45%, var(--bg));
+}
 .md-code .hx-jump::after,
 .md-codeblock .hx-jump::after {
   background: var(--bg-dim);
@@ -319,6 +326,17 @@ body {
 .md-url {
   color: var(--fg-dim);
 }
+/* Directives (directives.ts): document and table properties, as labels. */
+.md-directive {
+  display: inline-block;
+  padding: 0 0.5em;
+  border: 1px solid var(--bg-raised);
+  border-radius: 4px;
+  color: var(--fg-dim);
+  font-family: var(--ui-font);
+  font-size: 0.72em;
+  line-height: 1.7;
+}
 .md-comment {
   color: var(--fg-dim);
   font-family: var(--mono-font);
@@ -351,6 +369,18 @@ body {
   background: var(--bg-dim);
   padding-left: 1rem !important;
 }
+.md-codefence {
+  text-align: right;
+  padding-right: 0.7rem !important;
+}
+.md-codeinfo {
+  font-size: 0.9em;
+}
+.md-codeinfo,
+.md-codeinfo * {
+  color: var(--fg-dim) !important;
+  font-style: normal;
+}
 .md-hr {
   border-bottom: 1px solid var(--bg-raised);
   line-height: 0.8;
@@ -382,9 +412,24 @@ body {
   line-height: calc(var(--text-size) * 0.8) !important;
 }
 
-.md-table-wrap {
-  padding: 0.5em 0.25rem 0.8em;
-  overflow-x: auto;
+/* Each line of a table is a table of one row (livePreview.ts). */
+.md-table-first {
+  padding-top: 0.5em !important;
+}
+.md-table-last {
+  padding-bottom: 0.8em !important;
+}
+.md-table-line:not(.md-table-first) > .md-table {
+  /* Rows share their borders. */
+  margin-top: -1px;
+}
+/* CodeMirror's cursor helpers around a row would each open a text-high gap
+   between rows; out of the flow, they still give the line's coordinates. */
+.md-table-line > .cm-widgetBuffer {
+  position: absolute;
+}
+.md-table-rule {
+  height: 0.4em;
 }
 .md-table {
   border-collapse: collapse;
@@ -395,16 +440,37 @@ body {
 }
 .md-table th,
 .md-table td {
+  position: relative;
   border: 1px solid var(--bg-raised);
   padding: 0.35em 0.7em;
   vertical-align: top;
   text-align: left;
+  overflow-wrap: anywhere;
+}
+/* The border between two columns drags (writing a widths directive). */
+.md-col-handle {
+  position: absolute;
+  z-index: 1;
+  top: -1px;
+  bottom: -1px;
+  right: -4px;
+  width: 7px;
+  cursor: col-resize;
+}
+.md-col-handle:hover,
+.md-col-resizing .md-col-handle:active {
+  background: linear-gradient(to right, transparent 2px, var(--blue) 2px, var(--blue) 5px, transparent 5px);
+}
+.md-col-resizing,
+.md-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 .md-table th {
   background: var(--bg-line);
   color: var(--h1);
 }
-.md-table tr:nth-child(even) td {
+.md-table-even td {
   background: color-mix(in srgb, var(--bg-line) 45%, transparent);
 }
 .md-table strong {
@@ -661,6 +727,13 @@ body {
 .pk-row.selected {
   background: var(--sel-primary);
 }
+/* In a tree: the items shown only because a match is under them, and files. */
+.pk-row.pk-context {
+  color: var(--fg-dim);
+}
+.pk-row.pk-group {
+  color: var(--blue);
+}
 .pk-prefix {
   color: var(--fg-dim);
   white-space: pre;
@@ -798,11 +871,11 @@ body {
   color: var(--fg-muted);
   text-decoration: line-through color-mix(in srgb, var(--diff-minus) 70%, transparent);
 }
-/* Accept and Reject sit in the margin, left of the line numbers. */
+/* Accept and Reject sit in the margin, left of the gutters (review.ts measures them). */
 .cm-editor .cm-deletedChunk .cm-chunkButtons {
   position: absolute;
   top: 0.15rem;
-  right: calc(100% + 3.4rem * var(--zoom, 1) + 0.6rem);
+  right: calc(100% + var(--review-gutters, 0px) + 0.6rem);
   display: flex;
   gap: 0.25rem;
   width: max-content;

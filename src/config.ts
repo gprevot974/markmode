@@ -16,8 +16,9 @@ export const config = {
 
   // [editor]
   cursorline: true,
-  // line-number = "absolute"; false hides the gutter
-  lineNumbers: true,
+  // Line numbers in the margin: off for prose, where a paragraph is one line.
+  // gutters = ["line-numbers", ...] in config.toml turns them on.
+  lineNumbers: false,
   // Underline misspelled words, using the macOS spell checker and its languages
   spellcheck: true,
   softWrap: true,

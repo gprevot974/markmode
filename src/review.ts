@@ -97,10 +97,13 @@ const buttonPlacement = ViewPlugin.fromClass(
       this.view.requestMeasure({
         read: (view) => {
           const gutters = view.dom.querySelector<HTMLElement>(".cm-gutters");
-          const left = (gutters ?? view.contentDOM).getBoundingClientRect().left;
-          return left - view.scrollDOM.getBoundingClientRect().left < BUTTONS_WIDTH;
+          const content = view.contentDOM.getBoundingClientRect().left;
+          const left = gutters?.getBoundingClientRect().left ?? content;
+          return { narrow: left - view.scrollDOM.getBoundingClientRect().left < BUTTONS_WIDTH, gutters: content - left };
         },
-        write: (narrow, view) => {
+        write: ({ narrow, gutters }, view) => {
+          // How far left of the text the buttons go: past the gutters, whichever are shown.
+          view.scrollDOM.style.setProperty("--review-gutters", `${gutters}px`);
           if (view.scrollDOM.classList.contains("review-narrow") === narrow) return;
           view.scrollDOM.classList.toggle("review-narrow", narrow);
           view.requestMeasure();

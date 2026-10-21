@@ -63,6 +63,7 @@ node scripts/build-docx.ts input.md [output.docx]
 | `:history` | earlier versions of the file (`space h`) |
 | `:theme [name]` | show or change the theme |
 | `:zoom [in\|out\|reset\|percent]` | text size |
+| `:table-widths [widths\|reset]` | set the column widths of the table at the cursor (see [Directives](#directives)) |
 | `:reflow [width]` | hard-wrap the selected lines, or the paragraph at the cursor, to `text-width` (80) |
 | `:config-open` | open your Helix config.toml |
 | `:export-docx [path]` | export to Word |
@@ -81,6 +82,38 @@ Normal and select mode (`v`) follow Helix: `hjkl`, `w b e W B E`, `f t F T`, `A-
 `space y/p/P/R/e`, `]g [g ]G [G` (changes under review). Counts work (`3w`,
 `5j`, `12G`). Additions for this editor: `space d` (deciding on changes),
 `space c`, `space C`, `]c`, `[c` (comments) and `space h` (version history).
+
+### Moving around prose
+
+With soft wrap, a paragraph written as one line in the file shows as several
+rows. Moves follow the rows and edits follow the file's lines, since rows
+change with the window width:
+
+- `j` `k` move a row up or down, and `gh` `gl` `gs` (and Home, End) go to the
+  start, end and first non-blank of the row the cursor is on.
+- `I` `A`, `x` `X`, `J`, `> <`, `C` and counts on `G` keep to the file's lines,
+  so `A` appends at the end of the paragraph.
+- `j` `k` step through a table line by line: each line renders as a row of
+  the table, and only the line the cursor is on shows its source.
+- `o` and `O` know markdown: in a paragraph or under a heading they start a new
+  paragraph (with a blank line on each side); in a list item, a new item after
+  it (after its continuation lines and sublists too); in code, tables and
+  quotes, a line, as in Helix.
+
+There are no line numbers in the margin; the statusline shows the cursor's
+`line:column`. `gutters = ["line-numbers"]` in config.toml brings them back.
+To find your way in a long file:
+
+- `space s` lists the headings of the file as an indented outline, to type a
+  few letters of and jump to. A match keeps the headings it is under, dimmed,
+  and each space-separated word may match one of them (`setup conf`).
+  `space S` does the same for every markdown file in the workspace (where
+  `space f` looks), each file with its headings under it.
+- The jumplist works as in Helix: `gg`, `ge`, `G`, searches, `n`/`N`, `gw`,
+  `]g`/`[g`, `]c`/`[c`, the pickers and switching files are jumps; `C-o` goes
+  back to where you jumped from and `C-i` (or Tab) forward again. `C-s` saves
+  the current place, and `space j` lists the places. Each window has its own
+  list, and the places move with the text as it is edited.
 
 ## Reviewing outside changes
 
@@ -168,7 +201,7 @@ if set) and applied over the defaults in `src/config.ts`:
 - `theme`, including `theme = { light = "...", dark = "..." }`, which follows
   the macOS appearance. A theme picked with `:theme` wins over it.
 - `[editor]`: `cursorline`, `soft-wrap.enable`, `text-width`, `auto-save` (focus lost), and
-  whether `gutters` has line numbers.
+  whether `gutters` has line numbers (off unless it lists `line-numbers`).
 - `[keys.normal]` and `[keys.insert]`. A binding that uses a command this
   editor lacks is skipped whole (a sequence run halfway would do something
   else), and a message lists the skipped ones the first time, and again when
@@ -236,20 +269,30 @@ Change bindings in your Helix config.toml, or in `src/config.ts`. It uses config
 command names; see `src/helix/keymap.ts` for the defaults and `src/helix/commands.ts`
 for every command.
 
-## Docx directives
+## Directives
 
-Single-line HTML comments in the markdown control the export:
+Single-line HTML comments set properties of the document, or of the table
+under them. Other renderers hide them; the live preview shows them as small
+labels (and their source on the cursor's line), and the docx export follows
+them:
 
 ```markdown
 <!-- footer: Commercially confidential -->
 <!-- author: Your Name -->
 <!-- description: Project proposal -->
 <!-- no-subtitle -->
+<!-- widths: 20 30 50 -->
 ```
 
 By default the first `##` after the `#` title is styled as a subtitle;
-`no-subtitle` turns that off. Bold text that opens a paragraph, list item or table
-row is colored as a label. A table row starting with `**Total` gets the total-row
+`no-subtitle` turns that off. `widths`, on the line above a table (blank lines
+between are fine), sets its column widths, relative to each other, in the
+preview and the export. Drag the border between two columns in the preview
+to write it, or use `:table-widths 20 30 50`; `:table-widths` alone writes the
+widths the table shows, and `:table-widths reset` removes them.
+
+In the export, bold text that opens a paragraph, list item or table row is
+colored as a label. A table row starting with `**Total` gets the total-row
 style.
 
 ## Layout
@@ -259,6 +302,10 @@ src/helix/        modal editing: state, motions, text objects, commands, keymap,
 src/review.ts     reviewing outside changes inline (with the prose diff of src/diff.ts)
 src/comments.ts   comments in CriticMarkup (parsing in src/criticmarkup.ts)
 src/history.ts    the version history picker
+src/outline.ts    headings, for the heading pickers
+src/jumplist.ts   the jumplist (C-o, C-i)
+src/reflow.ts     :reflow
+src/directives.ts directives: footer, author, widths... (read by the preview and the export)
 src/preview/      live preview decorations and table rendering
 src/export/       markdown → docx
 src/theme/        Kanagawa, Helix themes, light and dark
@@ -279,12 +326,13 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 The unit tests cover the ported Helix motions and text objects, the docx
-output, line endings, Helix themes and config, the prose diff, CriticMarkup
-and the history preview. The browser tests run the
+output, line endings, Helix themes and config, the prose diff, CriticMarkup,
+the history preview, reflow, headings and the jumplist. The browser tests run the
 editor in Chrome against the in-memory backend with real key presses: live
 preview, windows, buffers, pickers, spelling, themes, line endings, crash
 recovery (a page reload stands in for a restart), reviewing outside changes
-(across two windows too), comments, version history, zoom, and a
+(across two windows too), comments, version history, zoom, moving by rows,
+`o`/`O`, the heading pickers, the jumplist, and a
 120,000-line file, with timings. They use the installed Chrome, or
 `CHROME_PATH`. The Rust tests cover encodings, atomic writes and the version
 history. CI runs all three on macOS.

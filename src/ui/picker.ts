@@ -22,6 +22,14 @@ export interface PickerOptions<T> {
   /** Unmatched columns shown before the text (buffer ids, flags). */
   prefix?(item: T): string;
   preview?(item: T): Preview | null | Promise<Preview | null>;
+  /**
+   * Items that form a tree, listed depth-first: rows are indented by depth and
+   * stay in order when filtered, under the items they belong to, and each
+   * space-separated pattern may match an item or the items it is under.
+   */
+  tree?: { depth(item: T): number; parent(item: T): T | null };
+  /** A class for an item's row. */
+  rowClass?(item: T): string;
   onSelect(item: T, how: OpenHow): void;
 }
 
@@ -31,6 +39,8 @@ interface Row<T> {
   item: T;
   text: string;
   indices: number[];
+  /** In a tree, shown only because a match is under it. */
+  context?: boolean;
 }
 
 export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
@@ -68,6 +78,7 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   function filter() {
     const pattern = input.value;
     if (!pattern.trim()) rows = all;
+    else if (opts.tree) return filterTree(opts.tree, pattern);
     else {
       const scored: [Row<T>, number][] = [];
       for (const row of all) {
@@ -83,6 +94,53 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
     render();
   }
 
+  function filterTree(tree: NonNullable<PickerOptions<T>["tree"]>, pattern: string) {
+    const terms = pattern.split(/\s+/).filter(Boolean);
+    const texts = new Map(all.map((r) => [r.item, r.text]));
+    const ancestors = (item: T) => {
+      const out: T[] = [];
+      for (let p = tree.parent(item); p; p = tree.parent(p)) out.push(p);
+      return out;
+    };
+    const hits = new Map<T, { score: number; indices: number[] }>();
+    const shown = new Set<T>();
+    for (const row of all) {
+      // Every term matches the item or one it is under, and at least one the item itself.
+      let score = 0;
+      let own = false;
+      const indices = new Set<number>();
+      const ok = terms.every((term) => {
+        const m = fuzzyMatch(term, row.text);
+        if (m) {
+          own = true;
+          score += m.score;
+          m.indices.forEach((i) => indices.add(i));
+          return true;
+        }
+        return ancestors(row.item).some((a) => fuzzyMatch(term, texts.get(a) ?? ""));
+      });
+      if (!ok || !own) continue;
+      hits.set(row.item, { score, indices: [...indices].sort((a, b) => a - b) });
+      shown.add(row.item);
+      ancestors(row.item).forEach((a) => shown.add(a));
+    }
+    rows = all
+      .filter((r) => shown.has(r.item))
+      .map((r) => {
+        const hit = hits.get(r.item);
+        return hit ? { ...r, indices: hit.indices } : { ...r, context: true };
+      });
+    // Start on the best match.
+    let best = -1;
+    rows.forEach((r, i) => {
+      const score = hits.get(r.item)?.score;
+      if (score !== undefined && (best < 0 || score > hits.get(rows[best].item)!.score)) best = i;
+    });
+    selected = Math.max(0, best);
+    top = 0;
+    render();
+  }
+
   function render() {
     count.textContent = loading ? "…" : `${rows.length}/${all.length}`;
     const page = pageSize();
@@ -90,7 +148,10 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
     if (selected >= top + page) top = selected - page + 1;
     const children = rows.slice(top, top + page).map((row, i) => {
       const el = document.createElement("div");
-      el.className = top + i === selected ? "pk-row selected" : "pk-row";
+      el.className = ["pk-row", top + i === selected && "selected", row.context && "pk-context", opts.rowClass?.(row.item)]
+        .filter(Boolean)
+        .join(" ");
+      if (opts.tree) el.style.paddingLeft = `calc(0.8rem + ${opts.tree.depth(row.item) * 2}ch)`;
       const prefix = opts.prefix?.(row.item);
       if (prefix) {
         const p = document.createElement("span");

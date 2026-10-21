@@ -2,8 +2,9 @@
 // hidden, except on lines that hold a selection, which show their raw source
 // so every character stays reachable by Helix motions.
 
-import { type EditorState, type Range as DecoRange, RangeSet, StateField } from "@codemirror/state";
+import { type EditorState, type Range as DecoRange, RangeSet, StateEffect, StateField } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
+import type { SyntaxNode } from "@lezer/common";
 import {
   Decoration,
   type DecorationSet,
@@ -14,7 +15,8 @@ import {
   type ViewUpdate,
   WidgetType,
 } from "@codemirror/view";
-import { renderTable } from "./table.ts";
+import { type CellLabel, measureColumns, renderTableLine, splitRow } from "./table.ts";
+import { describeDirective, fitWidths, parseDirective, parseWidths, widthsDirective, widthsLineAbove } from "../directives.ts";
 
 /**
  * One-based numbers of lines touched by a selection. A range's end is
@@ -91,6 +93,15 @@ function buildInline(view: EditorView): DecorationSet {
           }
           return;
         }
+        // Directives (`<!-- footer: ... -->`) show as labels.
+        if (name === "CommentBlock" && !isActive(node.from)) {
+          const line = doc.lineAt(node.from);
+          const directive = node.to <= line.to ? parseDirective(line.text) : null;
+          if (directive) {
+            decos.push(Decoration.replace({ widget: new TextWidget(describeDirective(directive), "md-directive") }).range(line.from, line.to));
+            return;
+          }
+        }
         if (MARKS[name]) {
           if (node.to > node.from) decos.push(Decoration.mark({ class: MARKS[name] }).range(node.from, node.to));
           // Inside a link, the URL is hidden along with its brackets.
@@ -106,6 +117,15 @@ function buildInline(view: EditorView): DecorationSet {
               const line = doc.lineAt(pos);
               decos.push(Decoration.line({ class: cls }).range(line.from));
               pos = line.to + 1;
+            }
+            // The fences' backticks hide like other syntax; the language stays,
+            // as a label in the block's corner rather than a first line of code.
+            if (name === "FencedCode") {
+              if (!isActive(node.from)) decos.push(Decoration.line({ class: "md-codefence" }).range(node.from));
+              for (let child = node.node.firstChild; child; child = child.nextSibling) {
+                if (child.name === "CodeInfo") decos.push(Decoration.mark({ class: "md-codeinfo" }).range(child.from, child.to));
+                else if (child.name === "CodeMark" && !isActive(child.from)) decos.push(hide.range(child.from, child.to));
+              }
             }
             return;
           }
@@ -183,28 +203,180 @@ const inlinePreview = ViewPlugin.fromClass(
 );
 
 // ── Tables ───────────────────────────────────────────────────────────────────
-// Tables become rendered HTML tables. They span lines, so their decorations
-// must come from a state field rather than a view plugin.
+// Each line of a table renders as one row of it, with the column widths of the
+// whole table, so the cursor moves through a table line by line and only the
+// lines it is on show their source, as elsewhere. The decorations depend on
+// the whole table, so they come from a state field rather than a view plugin.
 
-class TableWidget extends WidgetType {
+// Column widths by table source; a table is measured once, not once a row.
+const columnCache = new Map<string, number[]>();
+
+function columnsOf(view: EditorView, source: string): number[] | null {
+  const known = columnCache.get(source);
+  if (known) return known;
+  // Measured outside the content, which CodeMirror watches for changes.
+  const line = view.contentDOM.querySelector<HTMLElement>(".cm-line");
+  if (!line) return null;
+  const style = getComputedStyle(line);
+  const width = line.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const measured = width > 0 ? measureColumns(source, view.scrollDOM, width, style.font) : null;
+  if (measured) {
+    if (columnCache.size > 200) columnCache.clear();
+    columnCache.set(source, measured);
+  }
+  return measured;
+}
+
+/**
+ * Jump labels (`gw`) on words the preview renders itself: the editor's marks
+ * cannot reach into a rendered table row, so the row paints them.
+ */
+export interface PreviewLabel {
+  from: number;
+  text: string;
+}
+export const setPreviewLabels = StateEffect.define<PreviewLabel[]>();
+
+const previewLabels = StateField.define<PreviewLabel[]>({
+  create: () => [],
+  update(labels, tr) {
+    for (const e of tr.effects) if (e.is(setPreviewLabels)) return e.value;
+    return tr.docChanged ? [] : labels;
+  },
+});
+
+class TableLineWidget extends WidgetType {
   readonly source: string;
-  constructor(source: string) {
+  readonly index: number;
+  readonly labels: CellLabel[];
+  /** From the table's `widths` directive. */
+  readonly widths: number[] | null;
+  constructor(source: string, index: number, labels: CellLabel[], widths: number[] | null) {
     super();
     this.source = source;
+    this.index = index;
+    this.labels = labels;
+    this.widths = widths;
   }
-  eq(other: TableWidget) {
-    return other.source === this.source;
+  eq(other: TableLineWidget) {
+    return (
+      other.source === this.source &&
+      other.index === this.index &&
+      other.labels.length === this.labels.length &&
+      other.labels.every((l, i) => l.at === this.labels[i].at && l.text === this.labels[i].text) &&
+      String(other.widths) === String(this.widths)
+    );
   }
-  toDOM() {
-    const wrap = document.createElement("div");
-    wrap.className = "md-table-wrap";
-    wrap.appendChild(renderTable(this.source));
-    return wrap;
+  toDOM(view: EditorView) {
+    const columns = this.widths
+      ? fitWidths(this.widths, splitRow(this.source.split("\n")[0]).length)
+      : columnsOf(view, this.source);
+    const dom = renderTableLine(this.source, this.index, columns, this.labels);
+    dom.querySelectorAll<HTMLElement>(".md-col-handle").forEach((handle, i) =>
+      handle.addEventListener("mousedown", (e) => resizeColumns(view, dom, i, e)),
+    );
+    return dom;
   }
-  // Let clicks through so CodeMirror moves the cursor onto the table, which reveals its source.
-  ignoreEvent() {
-    return false;
+  // Let clicks through so CodeMirror moves the cursor onto the line, which
+  // reveals its source; the column borders are the widget's to drag.
+  ignoreEvent(e: Event) {
+    return e.target instanceof Element && !!e.target.closest(".md-col-handle");
   }
+}
+
+/** The rendered rows of the table a row is part of, as far as they are drawn. */
+function rowsOfTable(row: HTMLElement): HTMLTableElement[] {
+  const line = row.closest(".cm-line");
+  if (!line) return [];
+  const lines: Element[] = [line];
+  for (let l: Element | null = line; l && !l.classList.contains("md-table-first"); ) {
+    l = l.previousElementSibling;
+    if (l?.classList.contains("md-table-line")) lines.unshift(l);
+    else break;
+  }
+  for (let l: Element | null = line; l && !l.classList.contains("md-table-last"); ) {
+    l = l.nextElementSibling;
+    if (l?.classList.contains("md-table-line")) lines.push(l);
+    else break;
+  }
+  return lines.flatMap((l) => [...l.querySelectorAll<HTMLTableElement>(":scope > table.md-table")]);
+}
+
+const MIN_COLUMN = 0.05;
+
+/** Drags the border right of column `i`, between it and the next, then writes the widths into the document. */
+function resizeColumns(view: EditorView, row: HTMLElement, i: number, down: MouseEvent) {
+  down.preventDefault();
+  const tables = rowsOfTable(row);
+  const width = row.getBoundingClientRect().width;
+  const cols = [...row.querySelectorAll("col")].map((c) => parseFloat(c.style.width) / 100);
+  if (!width || i + 1 >= cols.length) return;
+  const [a, b] = [cols[i], cols[i + 1]];
+  let moved = false;
+  document.body.classList.add("md-col-resizing");
+  const move = (e: MouseEvent) => {
+    const d = Math.max(MIN_COLUMN - a, Math.min(b - MIN_COLUMN, (e.clientX - down.clientX) / width));
+    moved ||= Math.abs(e.clientX - down.clientX) > 2;
+    cols[i] = a + d;
+    cols[i + 1] = b - d;
+    for (const t of tables) t.querySelectorAll("col").forEach((c, k) => (c.style.width = `${(cols[k] * 100).toFixed(3)}%`));
+  };
+  const up = () => {
+    window.removeEventListener("mousemove", move);
+    window.removeEventListener("mouseup", up);
+    document.body.classList.remove("md-col-resizing");
+    const line = row.closest(".cm-line");
+    if (moved && line) setTableWidths(view, view.posAtDOM(line), cols);
+  };
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", up);
+}
+
+function tableAt(state: EditorState, pos: number) {
+  for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1); node; node = node.parent) {
+    if (node.name === "Table") return node;
+  }
+  return null;
+}
+
+/**
+ * The column widths of the table at `pos`, as fractions: its `widths`
+ * directive's, or as laid out. Null when `pos` is not in a table.
+ */
+export function tableWidths(view: EditorView, pos: number): number[] | null {
+  const { state } = view;
+  const table = tableAt(state, pos);
+  if (!table) return null;
+  const first = state.doc.lineAt(table.from);
+  const count = splitRow(first.text).length;
+  const at = widthsLineAbove((n) => state.doc.line(n).text, first.number);
+  const set = at ? parseWidths(parseDirective(state.doc.line(at).text)?.value ?? "") : null;
+  if (set) return fitWidths(set, count);
+  const measured = columnsOf(view, state.doc.sliceString(first.from, state.doc.lineAt(table.to).to));
+  return measured ? fitWidths(measured, count) : Array(count).fill(1 / count);
+}
+
+/**
+ * Writes the column widths of the table at `pos` into the `widths` directive
+ * above it (adding one), or with null, removes it. False when `pos` is not in a table.
+ */
+export function setTableWidths(view: EditorView, pos: number, fractions: number[] | null): boolean {
+  const { state } = view;
+  const table = tableAt(state, pos);
+  if (!table) return false;
+  const first = state.doc.lineAt(table.from);
+  const at = widthsLineAbove((n) => state.doc.line(n).text, first.number);
+  const text = fractions && widthsDirective(fractions);
+  if (at) {
+    const line = state.doc.line(at);
+    view.dispatch({
+      changes: text ? { from: line.from, to: line.to, insert: text } : { from: line.from, to: line.to + 1 },
+      userEvent: "input.table-widths",
+    });
+  } else if (text) {
+    view.dispatch({ changes: { from: first.from, insert: text + "\n" }, userEvent: "input.table-widths" });
+  }
+  return true;
 }
 
 // Blocks that can hold other blocks. The fields below look only at blocks,
@@ -215,17 +387,26 @@ const CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem",
 
 function buildTables(state: EditorState): DecorationSet {
   const active = activeLines(state);
+  const labels = state.field(previewLabels, false) ?? [];
   const decos: DecoRange<Decoration>[] = [];
   syntaxTree(state).iterate({
     enter(node) {
       if (node.name !== "Table") return CONTAINERS.has(node.name) ? undefined : false;
       const first = state.doc.lineAt(node.from);
       const last = state.doc.lineAt(node.to);
-      for (let n = first.number; n <= last.number; n++) if (active.has(n)) return false;
       const source = state.doc.sliceString(first.from, last.to);
-      decos.push(
-        Decoration.replace({ widget: new TableWidget(source), block: true }).range(first.from, last.to),
-      );
+      const at = widthsLineAbove((k) => state.doc.line(k).text, first.number);
+      const widths = at ? parseWidths(parseDirective(state.doc.line(at).text)?.value ?? "") : null;
+      for (let n = first.number; n <= last.number; n++) {
+        const line = state.doc.line(n);
+        const edge = n === first.number ? " md-table-first" : n === last.number ? " md-table-last" : "";
+        decos.push(Decoration.line({ class: "md-table-line" + edge }).range(line.from));
+        if (active.has(n) || line.length === 0) continue;
+        const onLine = labels.filter((l) => l.from >= line.from && l.from < line.to).map((l) => ({ at: l.from - line.from, text: l.text }));
+        decos.push(
+          Decoration.replace({ widget: new TableLineWidget(source, n - first.number, onLine, widths) }).range(line.from, line.to),
+        );
+      }
       return false;
     },
   });
@@ -235,7 +416,12 @@ function buildTables(state: EditorState): DecorationSet {
 const tablePreview = StateField.define<DecorationSet>({
   create: buildTables,
   update(deco, tr) {
-    if (tr.docChanged || tr.selection || syntaxTree(tr.startState) !== syntaxTree(tr.state)) {
+    if (
+      tr.docChanged ||
+      tr.selection ||
+      syntaxTree(tr.startState) !== syntaxTree(tr.state) ||
+      tr.effects.some((e) => e.is(setPreviewLabels))
+    ) {
       return buildTables(tr.state);
     }
     return deco;
@@ -294,4 +480,4 @@ const gutterClasses = StateField.define<RangeSet<GutterMarker>>({
   provide: (f) => gutterLineClass.from(f),
 });
 
-export const livePreview = [inlinePreview, tablePreview, gutterClasses];
+export const livePreview = [previewLabels, inlinePreview, tablePreview, gutterClasses];

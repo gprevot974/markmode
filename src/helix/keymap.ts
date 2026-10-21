@@ -70,6 +70,10 @@ export const normalKeys: KeyTrie = {
   home: "goto_line_start",
   end: "goto_line_end",
   G: "goto_line",
+  "C-o": "jump_backward",
+  "C-i": "jump_forward",
+  tab: "jump_forward",
+  "C-s": "save_selection",
 
   v: "select_mode",
   i: "insert_mode",
@@ -185,6 +189,9 @@ export const normalKeys: KeyTrie = {
     c: "add_comment",
     C: "remove_comment",
     h: "history_picker",
+    s: "symbol_picker",
+    S: "workspace_symbol_picker",
+    j: "jumplist_picker",
     // Outside changes under review.
     d: {
       a: "accept_change",

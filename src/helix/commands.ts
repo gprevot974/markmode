@@ -3,6 +3,7 @@
 
 import {
   EditorSelection,
+  type EditorState,
   type SelectionRange,
   type ChangeSpec,
   type Text,
@@ -10,6 +11,8 @@ import {
   type StateEffect,
 } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { syntaxTree } from "@codemirror/language";
+import type { SyntaxNode } from "@lezer/common";
 import { isolateHistory, undo as cmUndo, redo as cmRedo } from "@codemirror/commands";
 import { type Mode, modeField, setMode } from "./state.ts";
 import {
@@ -74,6 +77,14 @@ export interface Host {
   filePicker(inCurrentDir: boolean): void;
   bufferPicker(): void;
   historyPicker(): void;
+  /** `space s`: the headings of the document; `space S`: of the markdown files around it. */
+  headingPicker(workspace: boolean): void;
+  /** Keeps `before`, the selection a jump in `view` left, in its jumplist. */
+  pushJump(view: EditorView, before: EditorSelection): void;
+  jumpBackward(count: number): void;
+  jumpForward(count: number): void;
+  saveSelection(): void;
+  jumplistPicker(): void;
   gotoBuffer(which: "next" | "previous" | "last"): void;
   windowCommand(cmd: WindowCommand): void;
 }
@@ -212,10 +223,23 @@ function moveVisualLine(forward: boolean): Command {
       const r = toRange(sr);
       let c = EditorSelection.cursor(cursor(text, r), 0, undefined, sr.goalColumn);
       for (let i = 0; i < count; i++) c = view.moveVertically(c, forward);
-      return toSel(putCursor(text, r, c.head, ext), c.goalColumn);
+      return toSel(putCursor(text, r, ontoTableRow(view.state, cursor(text, r), c.head), ext), c.goalColumn);
     });
     setSelection(view, ranges);
   };
+}
+
+/**
+ * A move onto another line of a table lands somewhere in the rendered row
+ * that stood for it, often the end; the start of the line is where to be.
+ */
+function ontoTableRow(state: EditorState, from: number, to: number): number {
+  const line = state.doc.lineAt(to);
+  if (state.doc.lineAt(from).number === line.number) return to;
+  for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(line.from, 1); node; node = node.parent) {
+    if (node.name === "Table") return line.from;
+  }
+  return to;
 }
 
 function moveWord(target: WordTarget): Command {
@@ -240,6 +264,40 @@ function findCharCmd(kind: FindKind): Command {
 function gotoPos(view: EditorView, pos: (r: Range, text: string, doc: Text) => number) {
   const ext = extending(view);
   transform(view, (r, text, doc) => putCursor(text, r, pos(r, text, doc), ext));
+}
+
+// Screen rows. With soft wrap a paragraph is one line over several rows, so
+// `gh`, `gl` and `gs` go to the start and end of the row the cursor is on, as
+// it shows. Edits keep to the file's lines: rows change with the window width.
+
+/** Where the row holding the character at `pos` starts and ends (the end is before its line break or wrap). */
+function rowAt(view: EditorView, pos: number): { from: number; to: number } {
+  const at = EditorSelection.cursor(pos, 1);
+  return {
+    from: view.moveToLineBoundary(at, false, true).head,
+    to: view.moveToLineBoundary(at, true, true).head,
+  };
+}
+
+function rowStart(view: EditorView, pos: number): number {
+  return rowAt(view, pos).from;
+}
+
+/** The last character of the row; on a wrapped row, the last one before the spaces it wraps at. */
+function rowEnd(view: EditorView, text: string, doc: Text, pos: number): number {
+  const row = rowAt(view, pos);
+  if (row.to >= doc.lineAt(pos).to) return Math.max(row.from, lastCharOfLine(text, doc, pos));
+  let end = row.to;
+  while (end > row.from + 1 && /\s/.test(text[end - 1])) end--;
+  return end > row.from ? prevBoundary(text, end) : row.from;
+}
+
+function rowFirstNonWhitespace(view: EditorView, text: string, doc: Text, pos: number): number {
+  const row = rowAt(view, pos);
+  if (row.from === doc.lineAt(pos).from) return firstNonWhitespace(doc, pos);
+  let at = row.from;
+  while (at < row.to && /\s/.test(text[at])) at++;
+  return at;
 }
 
 const lineStart = (doc: Text, line: number) => doc.line(Math.max(1, Math.min(doc.lines, line))).from;
@@ -457,6 +515,7 @@ function search(forward: boolean): Command {
         registers.set("/", [pattern]);
         view.dispatch({ selection: original });
         searchFrom(view, host, forward, false);
+        if (!view.state.selection.eq(original)) host.pushJump(view, original);
       },
       onCancel: restore,
     });
@@ -573,14 +632,62 @@ export function continuationPrefix(lineText: string, below: boolean): string {
   return /^\s*/.exec(lineText)![0];
 }
 
+/**
+ * What `o` and `O` open next to, found from the markdown syntax: a paragraph or
+ * heading gets a new paragraph after (or before) it, a list item a new item
+ * after its continuation lines and sublists. Code, tables, quotes and blank
+ * lines get a line, as in Helix.
+ */
+function openTarget(state: EditorState, pos: number): { kind: "block" | "item"; from: number; to: number } | null {
+  const line = state.doc.lineAt(pos);
+  if (!line.text.trim()) return null;
+  let found: { kind: "block" | "item"; from: number; to: number } | null = null;
+  for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(firstNonWhitespace(state.doc, pos), 1); node; node = node.parent) {
+    if (/^(?:FencedCode|CodeBlock|HTMLBlock|Table|Blockquote|CommentBlock)$/.test(node.name)) return null;
+    if (node.name === "ListItem") {
+      if (!found || found.kind === "block") found = { kind: "item", from: node.from, to: node.to };
+    } else if (!found && /^(?:Paragraph|ATXHeading\d|SetextHeading\d)$/.test(node.name)) {
+      found = { kind: "block", from: node.from, to: node.to };
+    }
+  }
+  // The innermost list item, with any blank lines at its end left out.
+  if (found?.kind === "item") {
+    let last = state.doc.lineAt(found.to);
+    while (last.from > found.from && !last.text.trim()) last = state.doc.line(last.number - 1);
+    found.to = last.to;
+  }
+  return found;
+}
+
 function openLine(below: boolean): Command {
   return ({ view }) => {
-    const doc = view.state.doc;
+    const { state } = view;
+    const doc = state.doc;
+    const blank = (n: number) => n < 1 || n > doc.lines || !doc.line(n).text.trim();
     edit(
       view,
       (r) => {
-        const line = doc.lineAt(below ? (r.to > r.from ? r.to - 1 : r.to) : r.from);
-        const prefix = continuationPrefix(line.text, below);
+        const at = below ? (r.to > r.from ? r.to - 1 : r.to) : r.from;
+        const target = openTarget(state, at);
+        if (target?.kind === "block") {
+          // A blank line on either side of the new paragraph.
+          if (below) {
+            const end = doc.lineAt(target.to);
+            const after = blank(end.number + 1) ? "" : "\n";
+            return {
+              changes: { from: end.to, insert: "\n\n" + after },
+              range: EditorSelection.cursor(end.to + 2),
+            };
+          }
+          const start = doc.lineAt(target.from);
+          const before = blank(start.number - 1) ? "" : "\n";
+          return {
+            changes: { from: start.from, insert: before + "\n\n" },
+            range: EditorSelection.cursor(start.from + before.length),
+          };
+        }
+        const line = target ? doc.lineAt(below ? target.to : target.from) : doc.lineAt(at);
+        const prefix = continuationPrefix(target ? doc.lineAt(target.from).text : line.text, below);
         if (below) {
           return {
             changes: { from: line.to, insert: "\n" + prefix },
@@ -778,6 +885,16 @@ const killToLineStart = deleteBackwardTo((pos, _t, doc) => {
   return pos === line.from ? Math.max(0, pos - 1) : line.from;
 });
 
+/** A motion that jumps: the selection before it goes in the jumplist, as in Helix. */
+function jumping(cmd: Command): Command {
+  return (ctx) => {
+    const before = ctx.view.state.selection;
+    const done = cmd(ctx);
+    if (!ctx.view.state.selection.eq(before)) ctx.host.pushJump(ctx.view, before);
+    return done;
+  };
+}
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 export const commands: Record<string, Command> = {
@@ -814,9 +931,9 @@ export const commands: Record<string, Command> = {
   find_prev_char: findCharCmd("F"),
   till_prev_char: findCharCmd("T"),
   repeat_last_motion: (ctx) => lastMotion?.(ctx),
-  goto_line_start: ({ view }) => gotoPos(view, (r, _t, doc) => doc.lineAt(cursorOf(r, view)).from),
-  goto_line_end: ({ view }) => gotoPos(view, (r, text, doc) => lastCharOfLine(text, doc, cursorOf(r, view))),
-  goto_first_nonwhitespace: ({ view }) => gotoPos(view, (r, _t, doc) => firstNonWhitespace(doc, cursorOf(r, view))),
+  goto_line_start: ({ view }) => gotoPos(view, (r) => rowStart(view, cursorOf(r, view))),
+  goto_line_end: ({ view }) => gotoPos(view, (r, text, doc) => rowEnd(view, text, doc, cursorOf(r, view))),
+  goto_first_nonwhitespace: ({ view }) => gotoPos(view, (r, text, doc) => rowFirstNonWhitespace(view, text, doc, cursorOf(r, view))),
   goto_file_start: ({ view, count, hasCount }) =>
     gotoPos(view, (_r, _t, doc) => (hasCount ? lineStart(doc, count) : 0)),
   goto_last_line: ({ view }) => {
@@ -923,6 +1040,12 @@ export const commands: Record<string, Command> = {
 
   // Files, buffers and windows
   history_picker: ({ host }) => host.historyPicker(),
+  symbol_picker: ({ host }) => host.headingPicker(false),
+  workspace_symbol_picker: ({ host }) => host.headingPicker(true),
+  jump_backward: ({ host, count }) => host.jumpBackward(count),
+  jump_forward: ({ host, count }) => host.jumpForward(count),
+  save_selection: ({ host }) => host.saveSelection(),
+  jumplist_picker: ({ host }) => host.jumplistPicker(),
 
   file_picker: ({ host }) => host.filePicker(false),
   file_picker_in_current_directory: ({ host }) => host.filePicker(true),
@@ -936,6 +1059,22 @@ export const commands: Record<string, Command> = {
   delete_word_backward: deleteWordBackward,
   kill_to_line_start: killToLineStart,
 };
+
+for (const name of [
+  "goto_file_start",
+  "goto_last_line",
+  "goto_line",
+  "search_next",
+  "search_prev",
+  "goto_next_change",
+  "goto_prev_change",
+  "goto_first_change",
+  "goto_last_change",
+  "goto_next_comment",
+  "goto_prev_comment",
+]) {
+  commands[name] = jumping(commands[name]);
+}
 
 function cursorOf(r: Range, view: EditorView): number {
   return cursor(textOf(view.state.doc), r);

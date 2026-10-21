@@ -78,3 +78,15 @@ export function fuzzyMatch(pattern: string, text: string): Match | null {
   }
   return { score, indices: [...indices].sort((a, b) => a - b) };
 }
+
+/** The items matching `pattern`, best first (shorter on ties); all of them, in order, for an empty pattern. */
+export function fuzzyFilter<T>(pattern: string, items: T[], text: (item: T) => string): T[] {
+  if (!pattern.trim()) return items;
+  const scored: [T, number, number][] = [];
+  for (const item of items) {
+    const t = text(item);
+    const m = fuzzyMatch(pattern, t);
+    if (m) scored.push([item, m.score, t.length]);
+  }
+  return scored.sort((a, b) => b[1] - a[1] || a[2] - b[2]).map(([item]) => item);
+}

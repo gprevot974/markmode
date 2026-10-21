@@ -2,7 +2,7 @@
 
 import type { Harness } from "./run.ts";
 
-export default async function ({ page, type, press, ev, check }: Harness) {
+export default async function ({ page, type, press, ev, check, restart }: Harness) {
   const lineText = (n: number) =>
     ev((n) => {
       const v = app.view;
@@ -19,6 +19,10 @@ export default async function ({ page, type, press, ev, check }: Harness) {
   check("x keeps the next line rendered", !(await lineText(6))?.startsWith("#"), await lineText(6));
   await type(";");
 
+  // Line numbers are off unless config.toml's gutters has them.
+  check("no line numbers by default", !(await ev(() => document.querySelector(".cm-lineNumbers"))));
+  await ev(() => sessionStorage.setItem("md-editor.helix-config", JSON.stringify({ editor: { gutters: ["line-numbers"] } })));
+  await restart();
   await type("8Gx");
   const gutter = await ev(() => ({
     numbers: document.querySelectorAll(".cm-lineNumbers .cm-gutterElement").length,
@@ -138,6 +142,17 @@ export default async function ({ page, type, press, ev, check }: Harness) {
   await press("Tab");
   await press("Enter");
   check("Enter on a file opens it", !(await prompt()).open && (await files()).includes("/notes/ideas.md"), await files());
+  await type(":");
+  await type("o dea");
+  await page.waitForTimeout(100);
+  const fuzzy = await prompt();
+  await press("Escape");
+  check("path completion is fuzzy", fuzzy.items.includes("ideas.md"), fuzzy);
+  await type(":");
+  await type("rfl");
+  const command = await prompt();
+  await press("Escape");
+  check("command completion is fuzzy", command.items[0]?.startsWith("reflow"), command);
 
   // ge on a last line that wraps over several rows shows all of it.
   await ev(() => {

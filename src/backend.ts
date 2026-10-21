@@ -288,7 +288,8 @@ const browserBackend: Backend = {
     keys.forEach((k) => storage.removeItem(k));
     return found;
   },
-  helixConfig: async () => null,
+  // Tests stand in a config.toml, as JSON, under this key.
+  helixConfig: async () => JSON.parse(tabStorage()?.getItem("md-editor.helix-config") ?? "null"),
   helixConfigPath: async () => null,
   async helixTheme(name) {
     throw new Error(`no Helix theme named ${name}`);

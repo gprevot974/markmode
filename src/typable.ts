@@ -1,12 +1,14 @@
 // Typable commands (`:w`, `:o`, ...): names, aliases and docs, used both to
 // run them and to complete them in the command line.
 
+import { fuzzyFilter } from "./ui/fuzzy.ts";
+
 export interface Typable {
   name: string;
   aliases: string[];
   doc: string;
   /** What the argument completes to. */
-  args?: "path" | "theme" | "encoding" | "line-ending" | "zoom";
+  args?: "path" | "theme" | "encoding" | "line-ending" | "zoom" | "table-widths";
 }
 
 export const typables: Typable[] = [
@@ -39,6 +41,7 @@ export const typables: Typable[] = [
   { name: "accept-all-changes", aliases: [], doc: "Accept every outside change under review" },
   { name: "reject-all-changes", aliases: [], doc: "Reject every outside change under review" },
   { name: "reflow", aliases: [], doc: "Hard-wrap the selected lines (with only the cursor, its paragraph) to the given width, or to text-width (80)" },
+  { name: "table-widths", aliases: [], doc: "Set the column widths of the table at the cursor (:table-widths 20 30 50), in a widths directive above it. Without an argument, writes the widths it shows; reset removes them", args: "table-widths" },
   { name: "zoom", aliases: [], doc: "Make the text bigger or smaller: in, out, reset or a percentage (also Cmd-=, Cmd--, Cmd-0)", args: "zoom" },
   { name: "goto", aliases: ["g"], doc: "Goto line number" },
   { name: "help", aliases: ["h"], doc: "List the typable commands" },
@@ -48,16 +51,8 @@ export function findTypable(name: string): Typable | undefined {
   return typables.find((t) => t.name === name || t.aliases.includes(name));
 }
 
-/** Commands matching what has been typed: prefix matches first, then subsequence matches. */
+/** Commands matching what has been typed: prefix matches of a name or alias first, then fuzzy matches, best first. */
 export function matchTypables(typed: string): Typable[] {
   const prefix = (t: Typable) => [t.name, ...t.aliases].some((n) => n.startsWith(typed));
-  const subseq = (n: string) => {
-    let i = 0;
-    for (const c of n) if (c === typed[i]) i++;
-    return i === typed.length;
-  };
-  return [
-    ...typables.filter(prefix),
-    ...typables.filter((t) => !prefix(t) && subseq(t.name)),
-  ];
+  return [...typables.filter(prefix), ...fuzzyFilter(typed, typables.filter((t) => !prefix(t)), (t) => t.name)];
 }

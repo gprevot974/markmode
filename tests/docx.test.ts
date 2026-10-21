@@ -31,4 +31,13 @@ describe("docx export", () => {
     expect(footer).toContain("Draft for discussion");
     expect(core).toContain("md-editor");
   });
+
+  it("sizes table columns from a widths directive", async () => {
+    const md = "Intro\n\n<!-- widths: 25 75 -->\n| A | B |\n| --- | --- |\n| x | y |\n";
+    const xml = await documentXml(md);
+    const cols = [...xml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(cols).toHaveLength(2);
+    expect(cols[1] / cols[0]).toBeCloseTo(3, 1);
+    expect(xml).not.toContain("widths");
+  });
 });

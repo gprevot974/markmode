@@ -6,7 +6,7 @@ import { EditorSelection, type EditorState, Prec, type Range as DecoRange, State
 import { syntaxTree } from "@codemirror/language";
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import type { Host } from "./commands.ts";
-import { activeLines } from "../preview/livePreview.ts";
+import { activeLines, setPreviewLabels } from "../preview/livePreview.ts";
 import { nextBoundaryIn } from "./state.ts";
 
 interface Label {
@@ -55,15 +55,9 @@ export const jumpLabels = Prec.highest(
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz";
 const WORD = /[\p{L}\p{N}_][\p{L}\p{N}\p{M}_]+/gu;
 
-/** Whether the live preview hides `pos` (a link's URL, a rendered table). */
+/** Whether the live preview hides `pos` (a link's URL). Words in rendered tables get labels from the table. */
 function hiddenByPreview(state: EditorState, pos: number, activeLines: Set<number>): boolean {
   for (let node = syntaxTree(state).resolveInner(pos, 1); node.parent; node = node.parent) {
-    if (node.name === "Table") {
-      const first = state.doc.lineAt(node.from).number;
-      const last = state.doc.lineAt(node.to).number;
-      for (let n = first; n <= last; n++) if (activeLines.has(n)) return false;
-      return true;
-    }
     if (["URL", "LinkTitle", "LinkLabel"].includes(node.name) && node.parent?.name === "Link") {
       return !activeLines.has(state.doc.lineAt(pos).number);
     }
@@ -76,11 +70,25 @@ function wordsInView(view: EditorView): { from: number; to: number }[] {
   const main = state.selection.main;
   const active = activeLines(state);
   const words: { from: number; to: number }[] = [];
-  for (const { from, to } of view.visibleRanges) {
+  // The visible ranges leave out what decorations replace, rendered table rows among them.
+  const ranges = [...view.visibleRanges];
+  syntaxTree(state).iterate({
+    from: view.viewport.from,
+    to: view.viewport.to,
+    enter(node) {
+      if (node.name !== "Table") return;
+      ranges.push({ from: Math.max(node.from, view.viewport.from), to: Math.min(node.to, view.viewport.to) });
+      return false;
+    },
+  });
+  const seen = new Set<number>();
+  for (const { from, to } of ranges) {
     const slice = view.state.sliceDoc(from, to);
     for (const m of slice.matchAll(WORD)) {
       const start = from + m.index;
       const end = start + m[0].length;
+      if (seen.has(start)) continue;
+      seen.add(start);
       // The word the cursor is already on is not a jump target.
       if (start <= main.head && main.head <= end && start <= main.anchor && main.anchor <= end) continue;
       if (hiddenByPreview(state, start, active)) continue;
@@ -101,22 +109,30 @@ export function startJump(view: EditorView, extend: boolean, readChar: ReadChar,
     ...w,
     label: ALPHABET[Math.floor(i / ALPHABET.length)] + ALPHABET[i % ALPHABET.length],
   }));
-  const clear = () => view.dispatch({ effects: setJump.of(null) });
-  view.dispatch({ effects: setJump.of({ labels, typed: "" }) });
+  const show = (js: JumpState | null) =>
+    view.dispatch({
+      effects: [
+        setJump.of(js),
+        setPreviewLabels.of(js ? js.labels.map((l) => ({ from: l.from, text: l.label.slice(js.typed.length) })) : []),
+      ],
+    });
+  const clear = () => show(null);
+  show({ labels, typed: "" });
 
   readChar(
     "gw",
     (first) => {
       const remaining = labels.filter((l) => l.label[0] === first);
       if (!remaining.length) return clear();
-      view.dispatch({ effects: setJump.of({ labels: remaining, typed: first }) });
+      show({ labels: remaining, typed: first });
       readChar(
         `gw${first}`,
         (second) => {
           clear();
           const hit = remaining.find((l) => l.label[1] === second);
           if (!hit) return;
-          const main = view.state.selection.main;
+          const before = view.state.selection;
+          const main = before.main;
           const target = extend
             ? EditorSelection.range(main.anchor, hit.to)
             : EditorSelection.range(hit.from, hit.to);
@@ -125,6 +141,7 @@ export function startJump(view: EditorView, extend: boolean, readChar: ReadChar,
             scrollIntoView: true,
             userEvent: "select",
           });
+          host.pushJump(view, before);
         },
         clear,
       );
