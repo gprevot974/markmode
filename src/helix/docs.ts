@@ -117,6 +117,7 @@ export const commandDocs: Record<string, string> = {
   remove_comment: "Remove the comments under the selections",
   goto_next_comment: "Goto next comment",
   goto_prev_comment: "Goto previous comment",
+  changes_picker: "Open the picker of changes under review",
   history_picker: "Open the picker of earlier versions of the file",
   symbol_picker: "Open heading picker",
   workspace_symbol_picker: "Open heading picker across files",

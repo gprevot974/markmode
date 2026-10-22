@@ -31,7 +31,7 @@ import { propertyCompletions, styleCompletions, type Candidate } from "./export/
 import { openMenu } from "./ui/menu.ts";
 import { spellcheck } from "./spell.ts";
 import { comments } from "./comments.ts";
-import { asChange, changesOf, endReview, originalOf, replayed, reviewEffects, reviewing, reviewSlot, startReview } from "./review.ts";
+import { accept, asChange, type ChangeEntry, changeEntries, changePreview, changesOf, endReview, reject, selectChange, originalOf, replayed, reviewEffects, reviewing, reviewSlot, startReview } from "./review.ts";
 import { describeSnapshot, diffPreview } from "./history.ts";
 import { initZoom, setZoom, zoomLevel, zoomStep } from "./ui/zoom.ts";
 import { reflow } from "./reflow.ts";
@@ -1470,6 +1470,45 @@ class App implements Host {
             .catch((e) => this.message(String(e), "error")),
       },
       () => this.view.focus(),
+    );
+  }
+
+  /**
+   * The changes under review, previewed in place with what they replaced.
+   * Moving through the list scrolls to each; Enter selects one. Alt-a accepts
+   * the selected change and Alt-r rejects it, and the picker stays open.
+   */
+  changesPicker() {
+    const win = this.active;
+    const view = win.view;
+    if (!reviewing(view.state)) return this.message("no outside changes to review");
+    const scroll = view.scrollDOM.scrollTop;
+    const decide = (how: "accepted" | "rejected", run: typeof accept) => (entry: ChangeEntry) => {
+      run(view, [entry.chunk]);
+      const left = changeEntries(view.state);
+      this.message(left.length ? `${how} 1 change, ${left.length} left` : `${how} 1 change, review done${how === "rejected" ? " (:w to write it)" : ""}`);
+      return left;
+    };
+    openPicker<ChangeEntry>(
+      {
+        title: "changes",
+        hint: "A-a accept   A-r reject   Enter go to",
+        items: changeEntries(view.state),
+        text: (e) => e.text,
+        prefix: (e) => `${String(e.line).padStart(4)} ${e.kind === "added" ? "+" : e.kind === "removed" ? "−" : "~"} `,
+        preview: (e) => changePreview(view.state, e),
+        actions: { a: decide("accepted", accept), r: decide("rejected", reject) },
+        onHighlight: (e) => {
+          if (e) view.dispatch({ effects: EditorView.scrollIntoView(e.chunk.fromB, { y: "center" }) });
+        },
+        // Closing without choosing leaves the window where it was.
+        onClose: () => (view.scrollDOM.scrollTop = scroll),
+        onSelect: (e) => {
+          this.pushJump(view, view.state.selection);
+          selectChange(view, e.chunk);
+        },
+      },
+      () => view.focus(),
     );
   }
 

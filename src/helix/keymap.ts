@@ -192,6 +192,7 @@ export const normalKeys: KeyTrie = {
     c: "add_comment",
     C: "remove_comment",
     h: "history_picker",
+    d: "changes_picker",
     s: "symbol_picker",
     S: "workspace_symbol_picker",
     "/": "global_search",

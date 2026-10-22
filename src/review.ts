@@ -17,6 +17,7 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { invertedEffects, isolateHistory } from "@codemirror/commands";
 import { type Chunk, getChunks, getOriginalDoc, unifiedMergeView, updateOriginalDoc } from "@codemirror/merge";
 import type { Command } from "./helix/commands.ts";
+import type { Preview } from "./ui/picker.ts";
 import { proseDiff } from "./diff.ts";
 
 /** Marks an edit replayed from another window showing the same document. */
@@ -99,9 +100,14 @@ const buttonPlacement = ViewPlugin.fromClass(
           const gutters = view.dom.querySelector<HTMLElement>(".cm-gutters");
           const content = view.contentDOM.getBoundingClientRect().left;
           const left = gutters?.getBoundingClientRect().left ?? content;
-          return { narrow: left - view.scrollDOM.getBoundingClientRect().left < BUTTONS_WIDTH, gutters: content - left };
+          // Which removed-text gutter marks belong to a chunk with nothing removed: the library marks both alike.
+          const chunks = [...view.dom.querySelectorAll(".cm-deletedChunk")];
+          const marks = [...view.dom.querySelectorAll<HTMLElement>(".cm-changeGutter .cm-deletedLineGutter")];
+          const empty = chunks.length === marks.length ? chunks.map((c) => !c.querySelector(".cm-deletedLine")) : null;
+          return { narrow: left - view.scrollDOM.getBoundingClientRect().left < BUTTONS_WIDTH, gutters: content - left, marks, empty };
         },
-        write: ({ narrow, gutters }, view) => {
+        write: ({ narrow, gutters, marks, empty }, view) => {
+          marks.forEach((m, i) => m.classList.toggle("review-nothing-removed", !!empty?.[i]));
           // How far left of the text the buttons go: past the gutters, whichever are shown.
           view.scrollDOM.style.setProperty("--review-gutters", `${gutters}px`);
           if (view.scrollDOM.classList.contains("review-narrow") === narrow) return;
@@ -150,7 +156,7 @@ const copyTypedEdits = EditorState.transactionExtender.of((tr) => {
 // ── Accepting and rejecting ──────────────────────────────────────────────────
 
 /** Keeps changes as they are: they become part of the original. */
-function accept(view: EditorView, chunks: readonly Chunk[]) {
+export function accept(view: EditorView, chunks: readonly Chunk[]) {
   if (!chunks.length) return;
   const { state } = view;
   const original = getOriginalDoc(state);
@@ -166,7 +172,7 @@ function accept(view: EditorView, chunks: readonly Chunk[]) {
 }
 
 /** Brings back the original text of changes. */
-function reject(view: EditorView, chunks: readonly Chunk[]) {
+export function reject(view: EditorView, chunks: readonly Chunk[]) {
   if (!chunks.length) return;
   const { state } = view;
   const original = getOriginalDoc(state);
@@ -193,6 +199,16 @@ function changesAtSelection(state: EditorState): Chunk[] {
 
 const NO_REVIEW = "no outside changes to review";
 
+/** Selects a change and scrolls it to the middle of the window. */
+export function selectChange(view: EditorView, chunk: Chunk) {
+  const end = chunk.endB > chunk.fromB ? chunk.endB : Math.min(chunk.fromB + 1, view.state.doc.length);
+  view.dispatch({
+    selection: EditorSelection.single(chunk.fromB, end),
+    effects: EditorView.scrollIntoView(chunk.fromB, { y: "center" }),
+    userEvent: "select",
+  });
+}
+
 function gotoChange(which: "next" | "prev" | "first" | "last"): Command {
   return ({ view, host, count }) => {
     const chunks = changesOf(view.state);
@@ -206,14 +222,8 @@ function gotoChange(which: "next" | "prev" | "first" | "last"): Command {
       target = chunks.filter((c) => c.fromB > at)[count - 1];
     } else target = chunks.filter((c) => c.fromB < main.from).reverse()[count - 1];
     if (!target) return host.message(`no ${which === "next" ? "next" : "previous"} change`);
-    const end = target.endB > target.fromB ? target.endB : Math.min(target.fromB + 1, view.state.doc.length);
-    const n = chunks.indexOf(target) + 1;
-    view.dispatch({
-      selection: EditorSelection.single(target.fromB, end),
-      effects: EditorView.scrollIntoView(target.fromB, { y: "center" }),
-      userEvent: "select",
-    });
-    host.message(`change ${n} of ${chunks.length}`);
+    selectChange(view, target);
+    host.message(`change ${chunks.indexOf(target) + 1} of ${chunks.length}`);
   };
 }
 
@@ -238,3 +248,60 @@ export const reviewCommands: Record<string, Command> = {
   accept_all_changes: decide("accept", true),
   reject_all_changes: decide("reject", true),
 };
+
+// ── The changes picker ───────────────────────────────────────────────────────
+
+/** A change as the picker lists it. */
+export interface ChangeEntry {
+  chunk: Chunk;
+  /** One-based line of the document where it is. */
+  line: number;
+  kind: "added" | "removed" | "changed";
+  /** The first line of what is there now, or of what was removed. */
+  text: string;
+}
+
+const CONTEXT = 3;
+
+const firstLine = (text: string) => text.split("\n").find((l) => l.trim())?.trim() ?? "";
+const linesIn = (text: string) => (text ? text.split("\n") : []);
+
+/** The changes still to review, in document order. */
+export function changeEntries(state: EditorState): ChangeEntry[] {
+  const original = getOriginalDoc(state);
+  return changesOf(state).map((chunk) => {
+    const added = state.sliceDoc(chunk.fromB, chunk.endB);
+    const removed = original.sliceString(chunk.fromA, chunk.endA);
+    const kind = chunk.fromA === chunk.toA ? "added" : chunk.fromB === chunk.toB ? "removed" : "changed";
+    return {
+      chunk,
+      line: state.doc.lineAt(chunk.fromB).number,
+      kind,
+      text: firstLine(kind === "removed" ? removed : added) || "(blank line)",
+    };
+  });
+}
+
+/** A change with a few lines around it: the removed lines struck out, the added ones marked. */
+export function changePreview(state: EditorState, { chunk, kind }: ChangeEntry): Preview {
+  const { doc } = state;
+  const first = doc.lineAt(chunk.fromB).number;
+  // The line after the change: for a removal, the line it was removed before.
+  const next = kind === "removed" ? first : doc.lineAt(chunk.endB).number + 1;
+  const lines: string[] = [];
+  const classes: string[] = [];
+  const push = (text: string, cls: string) => {
+    lines.push(text);
+    classes.push(cls);
+  };
+  const from = Math.max(1, first - CONTEXT);
+  if (from > 1) push("⋯", "pk-skip");
+  for (let n = from; n < first; n++) push(doc.line(n).text, "");
+  const line = lines.length + 1;
+  for (const text of linesIn(getOriginalDoc(state).sliceString(chunk.fromA, chunk.endA))) push(text, "pk-del");
+  for (const text of linesIn(state.sliceDoc(chunk.fromB, chunk.endB))) push(text, "pk-add");
+  const until = Math.min(doc.lines, next + CONTEXT - 1);
+  for (let n = next; n <= until; n++) push(doc.line(n).text, "");
+  if (until < doc.lines) push("⋯", "pk-skip");
+  return { text: lines.join("\n"), line, classes };
+}

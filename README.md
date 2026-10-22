@@ -89,7 +89,7 @@ Normal and select mode (`v`) follow Helix: `hjkl`, `w b e W B E`, `f t F T`, `A-
 `mi ma mm ms mr md`, `zz zt zb zj zk`, `C-u C-d C-b C-f`, `[space ]space`,
 `space y/p/P/R/e`, `]g [g ]G [G` (changes under review). Counts work (`3w`,
 `5j`, `12G`). Additions for this editor: `space g` (deciding on changes),
-`space c`, `space C`, `]c`, `[c` (comments), `space h` (version history) and
+`space d` (list of changes), `space c`, `space C`, `]c`, `[c` (comments), `space h` (version history) and
 `gf` on links (Helix's goto file).
 
 ### Moving around prose
@@ -203,6 +203,9 @@ Then, as with Helix's diff gutter:
   `space g A` / `space g R` decide on all of them. The Accept and Reject buttons
   in the margin beside each change do the same, and so do `:accept-all-changes`,
   `:reject-all-changes` and Helix's `:reset-diff-change` (`:diffget`).
+- `space d` lists the changes with a preview of each; moving through the list
+  scrolls to it, Enter selects it, Escape goes back. `Alt-a` accepts the selected
+  change and `Alt-r` rejects it, and the list stays open on the next one.
 - `u` undoes the whole outside change at once.
 
 What you type during a review is taken as it is: it does not show as a change.

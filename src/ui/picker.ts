@@ -39,6 +39,13 @@ export interface PickerOptions<T> {
   matched?(item: T): [number, number];
   /** A class for an item's row. */
   rowClass?(item: T): string;
+  /**
+   * Alt plus a letter acts on the selected item and returns the items left
+   * (a change accepted or rejected); the picker stays open on the next one.
+   */
+  actions?: Record<string, (item: T) => T[]>;
+  /** A line of key hints under the list. */
+  hint?: string;
   onSelect(item: T, how: OpenHow): void;
   /** The item the selection is on, each time it moves to another (null with none): to show it live, as `:theme` does. */
   onHighlight?(item: T | null): void;
@@ -67,6 +74,7 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
         <span class="pk-count"></span>
       </div>
       <div class="pk-list"></div>
+      <div class="pk-hint"></div>
     </div>
     <div class="pk-preview"></div>`;
   document.body.appendChild(root);
@@ -76,6 +84,7 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   const count = q<HTMLElement>(".pk-count");
   const previewBox = q<HTMLElement>(".pk-preview");
   q<HTMLElement>(".pk-title").textContent = opts.title;
+  q<HTMLElement>(".pk-hint").textContent = opts.hint ?? "";
 
   let all: Row<T>[] = [];
   let rows: Row<T>[] = [];
@@ -266,6 +275,17 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
     if (row) opts.onSelect(row.item, how);
   }
 
+  /** Takes new items in, staying at the same place in the list. */
+  function reload(items: T[]) {
+    if (!items.length) return close();
+    const at = selected;
+    previewCache.clear();
+    all = items.map((item) => ({ item, text: opts.text(item), indices: [] }));
+    filter();
+    selected = Math.min(at, rows.length - 1);
+    render();
+  }
+
   input.oninput = filter;
   input.onblur = close;
   root.onmousedown = (e) => {
@@ -273,7 +293,14 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   };
   window.addEventListener("resize", render);
   input.onkeydown = (e) => {
-    const key = (e.ctrlKey ? "C-" : "") + (e.shiftKey && e.key === "Tab" ? "S-Tab" : e.key);
+    const key = e.altKey && /^Key[A-Z]$/.test(e.code) ? "A-" + e.code.slice(3).toLowerCase() : (e.ctrlKey ? "C-" : "") + (e.shiftKey && e.key === "Tab" ? "S-Tab" : e.key);
+    const act = opts.actions?.[key.slice(2)];
+    if (key.startsWith("A-") && act) {
+      e.preventDefault();
+      const row = rows[selected];
+      if (row) reload(act(row.item));
+      return;
+    }
     switch (key) {
       case "Escape":
       case "C-c":

@@ -77,6 +77,8 @@ export interface Host {
   filePicker(inCurrentDir: boolean): void;
   bufferPicker(): void;
   historyPicker(): void;
+  /** `space d`: the changes under review, to jump to one or decide on it. */
+  changesPicker(): void;
   /** `space s`: the headings of the document; `space S`: of the markdown files around it. */
   headingPicker(workspace: boolean): void;
   /** `gf`: opens what the link under the cursor points to. */
@@ -1051,6 +1053,7 @@ export const commands: Record<string, Command> = {
 
   // Files, buffers and windows
   history_picker: ({ host }) => host.historyPicker(),
+  changes_picker: ({ host }) => host.changesPicker(),
   symbol_picker: ({ host }) => host.headingPicker(false),
   workspace_symbol_picker: ({ host }) => host.headingPicker(true),
   jump_backward: ({ host, count }) => host.jumpBackward(count),

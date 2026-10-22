@@ -955,6 +955,16 @@ body {
   overflow: hidden;
   padding: 0.2rem 0;
 }
+.pk-hint {
+  color: var(--fg-dim);
+  padding: 0.3rem 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pk-hint:empty {
+  display: none;
+}
 .pk-row {
   height: 22px;
   line-height: 22px;
@@ -1159,6 +1169,10 @@ body {
 }
 .cm-editor .cm-deletedLineGutter {
   background: var(--diff-minus);
+}
+/* The row holding only the buttons: nothing was removed, so no removal mark. */
+.cm-editor .cm-deletedLineGutter.review-nothing-removed {
+  background: none;
 }
 
 /* ── Comments (comments.ts) ──────────────────────────────────────────────── */
