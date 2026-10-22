@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>md-editor</title>
+    <title>Markmode</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/style.css" />
     <script>
@@ -11,15 +11,15 @@
       // first paint; src/theme/appearance.ts and src/ui/zoom.ts take over.
       try {
         const root = document.documentElement;
-        const t = localStorage.getItem("md-editor.theme");
-        const helix = JSON.parse(localStorage.getItem("md-editor.theme-vars") ?? "null");
+        const t = localStorage.getItem("markmode.theme");
+        const helix = JSON.parse(localStorage.getItem("markmode.theme-vars") ?? "null");
         let light = t === "light" || (t !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
         if (helix) {
           light = helix.light;
           for (const [k, v] of Object.entries(helix.vars)) root.style.setProperty(k, v);
         }
         root.dataset.theme = light ? "light" : "dark";
-        const zoom = localStorage.getItem("md-editor.zoom");
+        const zoom = localStorage.getItem("markmode.zoom");
         if (zoom) root.style.setProperty("--zoom", zoom);
       } catch {}
     </script>

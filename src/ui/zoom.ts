@@ -3,7 +3,7 @@
 // window. The statusline and prompt keep their size. The level is kept for the
 // next start; index.html applies it before the first paint.
 
-const KEY = "md-editor.zoom";
+const KEY = "markmode.zoom";
 const STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 const MIN = STEPS[0];
 const MAX = STEPS[STEPS.length - 1];

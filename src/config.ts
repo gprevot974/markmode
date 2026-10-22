@@ -1,6 +1,6 @@
 // Defaults, in the shape of Helix's config.toml. At startup, the settings of
 // ~/.config/helix/config.toml that apply to this editor replace them (see
-// helixConfig.ts), then those of ~/.config/md-editor/config.toml (see
+// helixConfig.ts), then those of ~/.config/markmode/config.toml (see
 // settings.ts); the key remaps of both are added to these.
 
 import type { KeyTrie } from "./helix/keymap.ts";

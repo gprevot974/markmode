@@ -1,11 +1,11 @@
 [package]
-name = "md-editor"
+name = "markmode"
 version = "0.1.0"
 description = "Markdown editor with Helix keybindings and live preview"
 edition = "2021"
 
 [lib]
-name = "md_editor_lib"
+name = "markmode_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

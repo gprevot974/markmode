@@ -64,7 +64,7 @@ export interface Backend {
   /** The nearest directory at or above `dir` holding `.git` or `.helix`, else `dir`. */
   workspaceRoot(dir: string): Promise<string>;
   homeDir(): Promise<string>;
-  /** ~/.config/md-editor: config.toml and the export styles. */
+  /** ~/.config/markmode: config.toml and the export styles. */
   configDir(): Promise<string>;
   /** Moves files to the Trash. */
   trashFiles(paths: string[]): Promise<void>;
@@ -222,10 +222,10 @@ const tauriBackend: Backend = {
 
 // ── Browser stand-in ─────────────────────────────────────────────────────────
 
-const FILE = "md-editor.file.";
-const RECOVERY = "md-editor.recovery.";
-const HISTORY = "md-editor.history.";
-const BASELINE = "md-editor.baseline.";
+const FILE = "markmode.file.";
+const RECOVERY = "markmode.recovery.";
+const HISTORY = "markmode.history.";
+const BASELINE = "markmode.baseline.";
 
 /** The tab's storage, which outlives reloading the page; null where it is blocked. */
 function tabStorage(): Storage | null {
@@ -355,7 +355,7 @@ const browserBackend: Backend = {
   },
   workspaceRoot: async () => "/",
   homeDir: async () => "",
-  configDir: async () => "/config/md-editor",
+  configDir: async () => "/config/markmode",
   createDir: async () => {},
   async trashFiles(paths) {
     for (const path of paths) {
@@ -394,7 +394,7 @@ const browserBackend: Backend = {
     return found;
   },
   // Tests stand in a config.toml, as JSON, under this key.
-  helixConfig: async () => JSON.parse(tabStorage()?.getItem("md-editor.helix-config") ?? "null"),
+  helixConfig: async () => JSON.parse(tabStorage()?.getItem("markmode.helix-config") ?? "null"),
   helixConfigPath: async () => null,
   async helixTheme(name) {
     throw new Error(`no Helix theme named ${name}`);

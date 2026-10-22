@@ -109,12 +109,12 @@ fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     Ok(entries)
 }
 
-/// `~/.config/md-editor`: config.toml and the export styles.
+/// `~/.config/markmode`: config.toml and the export styles.
 #[tauri::command]
 fn config_dir() -> String {
     match std::env::var_os("XDG_CONFIG_HOME") {
-        Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("md-editor"),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/md-editor"),
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("markmode"),
+        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config/markmode"),
     }
     .to_string_lossy()
     .into_owned()
@@ -386,7 +386,7 @@ pub fn run() {
                         }
                     }
                 }
-                let quit = MenuItem::with_id(app, "quit", "Quit md-editor", true, Some("CmdOrCtrl+Q"))?;
+                let quit = MenuItem::with_id(app, "quit", "Quit Markmode", true, Some("CmdOrCtrl+Q"))?;
                 app_menu.append(&quit)?;
             }
             app.set_menu(menu)?;

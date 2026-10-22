@@ -17,9 +17,9 @@ const BUILTIN: Record<string, "auto" | "light" | "dark"> = {
   dark: "dark",
 };
 
-const KEY = "md-editor.theme";
+const KEY = "markmode.theme";
 /** The last Helix theme's variables, for index.html to set before the first paint. */
-const VARS_KEY = "md-editor.theme-vars";
+const VARS_KEY = "markmode.theme-vars";
 const systemLight = matchMedia("(prefers-color-scheme: light)");
 
 let choice: ThemeChoice = "auto";

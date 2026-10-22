@@ -76,7 +76,7 @@ export default async function ({ type, press, ev, check }: Harness) {
   const toml = await ev(() => ({ path: app.active.doc.path, text: app.view.state.doc.toString(), windows: document.querySelectorAll(".window").length }));
   check(
     ":export-style-new writes a starter style from the document's and opens it beside",
-    toml.path === "/config/md-editor/styles/acme.toml" && toml.text.includes('inherits = "plain"') && toml.windows === 2,
+    toml.path === "/config/markmode/styles/acme.toml" && toml.text.includes('inherits = "plain"') && toml.windows === 2,
     toml,
   );
   check("a style file is plain text, not previewed markdown", await ev(() => !document.querySelector(".window.active .md-h")));
@@ -137,7 +137,7 @@ export default async function ({ type, press, ev, check }: Harness) {
   check("closing the picker puts the window back", !(await look()).on && (await text()).includes("style: default"));
 
   await command("export-style-default plain");
-  const config = await ev(() => backend.readText("/config/md-editor/config.toml").then((f: { text: string }) => f.text));
+  const config = await ev(() => backend.readText("/config/markmode/config.toml").then((f: { text: string }) => f.text));
   check(":export-style-default writes config.toml", config.includes('[export]\nstyle = "plain"'), config);
 
   await command("export-help");

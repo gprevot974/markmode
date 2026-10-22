@@ -1,7 +1,7 @@
 // Where export styles come from, most specific first:
 //
-//   <project>/.md-editor/styles/<name>.toml   shared with a project, in its repository
-//   ~/.config/md-editor/styles/<name>.toml    your own
+//   <project>/.markmode/styles/<name>.toml   shared with a project, in its repository
+//   ~/.config/markmode/styles/<name>.toml    your own
 //   the built-in ones (style.ts)
 //
 // A style named in a more specific place hides one of the same name further
@@ -22,7 +22,7 @@ export interface StyleFs {
 
 export type StyleScope = "project" | "user" | "built-in";
 
-/** The directories holding a config.toml and styles/: `.md-editor` and `~/.config/md-editor`. */
+/** The directories holding a config.toml and styles/: `.markmode` and `~/.config/markmode`. */
 export interface StyleDirs {
   project: string | null;
   user: string | null;

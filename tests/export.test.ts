@@ -72,15 +72,15 @@ describe("export style files", () => {
 
   it("finds styles in the project, then the user's, then built in", async () => {
     const fs = memoryFs({
-      "/p/.md-editor/styles/acme.toml": '[colors]\nheading = "#111111"',
-      "/p/.md-editor/styles/plain.toml": 'inherits = "plain"\n[colors]\naccent = "#222222"',
+      "/p/.markmode/styles/acme.toml": '[colors]\nheading = "#111111"',
+      "/p/.markmode/styles/plain.toml": 'inherits = "plain"\n[colors]\naccent = "#222222"',
       "/u/styles/acme.toml": 'description = "mine"\n[colors]\nheading = "#999999"',
       "/u/styles/mine.toml": 'inherits = "acme"\n[sizes]\nbody = 12',
       "/u/styles/loop.toml": 'inherits = "loop2"',
       "/u/styles/loop2.toml": 'inherits = "loop"',
       "/u/styles/orphan.toml": 'inherits = "nowhere"',
     });
-    const dirs = { project: "/p/.md-editor", user: "/u" };
+    const dirs = { project: "/p/.markmode", user: "/u" };
     const names = (await listStyles(fs, dirs)).map((e) => `${e.name}:${e.scope}`);
     expect(names).toEqual(["acme:project", "plain:project", "loop:user", "loop2:user", "mine:user", "orphan:user", "default:built-in"]);
 

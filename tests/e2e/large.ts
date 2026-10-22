@@ -8,7 +8,7 @@ const LINES = 120_000;
 
 export default async function ({ page, type, press, ev, check, restart }: Harness) {
   // With line numbers, which are off by default, to time them too.
-  await ev(() => sessionStorage.setItem("md-editor.helix-config", JSON.stringify({ editor: { gutters: ["line-numbers"] } })));
+  await ev(() => sessionStorage.setItem("markmode.helix-config", JSON.stringify({ editor: { gutters: ["line-numbers"] } })));
   await restart();
   const opened = await ev(async (lines) => {
     const block = [

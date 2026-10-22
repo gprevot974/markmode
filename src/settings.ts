@@ -1,4 +1,4 @@
-// Your settings: ~/.config/md-editor/config.toml, read at startup. It has the
+// Your settings: ~/.config/markmode/config.toml, read at startup. It has the
 // shape of Helix's config.toml (theme, [editor], [keys]) plus this editor's
 // own options, and it applies over your Helix config, which applies over the
 // defaults in config.ts. `:config-open` opens it, writing this template first
@@ -29,7 +29,7 @@ export function applySettings(settings: Table): string[] {
 }
 
 /** What `:config-open` writes when there is no config.toml yet: every setting, commented out. */
-export const SETTINGS_TEMPLATE = `# md-editor settings. Uncomment a line to change it; changes apply on the next
+export const SETTINGS_TEMPLATE = `# Markmode settings. Uncomment a line to change it; changes apply on the next
 # start. They apply over ~/.config/helix/config.toml, which has the same shape.
 
 # Read your Helix config.toml: its theme, editor options and key remaps.

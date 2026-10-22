@@ -73,7 +73,7 @@ mod tests {
 
     #[test]
     fn brings_a_cleaned_image_back_once() {
-        let base = std::env::temp_dir().join(format!("md-editor-cleaned-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("markmode-cleaned-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let root = base.join("cleaned");
         let image = base.join("doc/assets/a.png");
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn lets_old_ones_go() {
-        let base = std::env::temp_dir().join(format!("md-editor-cleaned-prune-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("markmode-cleaned-prune-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let image = base.join("a.png");
         fs::create_dir_all(&base).unwrap();

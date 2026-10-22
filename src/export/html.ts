@@ -306,7 +306,7 @@ export function markdownToHtml(src: string, style: ExportStyle = defaultStyle(),
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escape(title)}</title>
-${meta("author", property("author"))}${meta("description", property("description"))}${meta("keywords", property("keywords"))}<meta name="generator" content="md-editor">
+${meta("author", property("author"))}${meta("description", property("description"))}${meta("keywords", property("keywords"))}<meta name="generator" content="Markmode">
 <style>
 ${css(style, footer)}
 </style>

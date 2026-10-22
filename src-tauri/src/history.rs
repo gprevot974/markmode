@@ -160,7 +160,7 @@ mod tests {
     use super::*;
 
     fn temp_root(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("md-editor-history-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("markmode-history-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
     }

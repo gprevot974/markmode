@@ -37,8 +37,8 @@ let root = dirname(resolve(input));
 while (!existsSync(join(root, ".git")) && !existsSync(join(root, ".helix")) && dirname(root) !== root) root = dirname(root);
 if (!existsSync(join(root, ".git")) && !existsSync(join(root, ".helix"))) root = dirname(resolve(input));
 const dirs = {
-  project: join(root, ".md-editor"),
-  user: join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "md-editor"),
+  project: join(root, ".markmode"),
+  user: join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "markmode"),
 };
 
 const markdown = readFileSync(input, "utf8");

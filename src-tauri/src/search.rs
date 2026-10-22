@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     fn dir(files: &[(&str, &[u8])]) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("md-editor-search-{}-{}", std::process::id(), files.len()));
+        let root = std::env::temp_dir().join(format!("markmode-search-{}-{}", std::process::id(), files.len()));
         let _ = std::fs::remove_dir_all(&root);
         for (name, bytes) in files {
             let path = root.join(name);

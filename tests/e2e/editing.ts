@@ -21,7 +21,7 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
 
   // Line numbers are off unless config.toml's gutters has them.
   check("no line numbers by default", !(await ev(() => document.querySelector(".cm-lineNumbers"))));
-  await ev(() => sessionStorage.setItem("md-editor.helix-config", JSON.stringify({ editor: { gutters: ["line-numbers"] } })));
+  await ev(() => sessionStorage.setItem("markmode.helix-config", JSON.stringify({ editor: { gutters: ["line-numbers"] } })));
   await restart();
   await type("9Gx");
   const gutter = await ev(() => ({

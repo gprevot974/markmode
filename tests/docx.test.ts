@@ -15,7 +15,7 @@ async function documentXml(md: string): Promise<string> {
 describe("docx export", () => {
   it("renders headings, emphasis, lists and tables from the sample", async () => {
     const xml = await documentXml(sample);
-    expect(xml).toContain("Markdown Editor Sample");
+    expect(xml).toContain("Markmode Sample");
     expect(xml).toContain("<w:tbl>");
     expect(xml).toContain("$25,000");
     // Markdown syntax does not leak into the document.
@@ -29,7 +29,7 @@ describe("docx export", () => {
     const footer = await zip.file("word/footer1.xml")!.async("string");
     const core = await zip.file("docProps/core.xml")!.async("string");
     expect(footer).toContain("Draft for discussion");
-    expect(core).toContain("md-editor");
+    expect(core).toContain("Markmode");
   });
 
   it("sizes table columns from a widths directive", async () => {

@@ -56,11 +56,11 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
 
   // :config-open writes the settings template when there is none.
   await run("config-open");
-  const template = await disk("/config/md-editor/config.toml");
+  const template = await disk("/config/markmode/config.toml");
   check(":config-open writes a commented settings file", template.includes("[images]") && template.includes("# spellcheck = true"), template);
 
   // Settings apply at the next start: here, where pasted images go.
-  await ev(() => backend.writeText("/config/md-editor/config.toml", '[images]\nfolder = "pics"\n'));
+  await ev(() => backend.writeText("/config/markmode/config.toml", '[images]\nfolder = "pics"\n'));
   await restart();
   await run("o /notes/ideas.md");
   const pasted = await ev(async () => {

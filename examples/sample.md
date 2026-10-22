@@ -1,10 +1,10 @@
 ---
-author: md-editor
+author: Markmode
 footer: Draft for discussion
 description: A document to show the looks of some markdown elements
 ---
 
-# Markdown Editor Sample
+# Markmode Sample
 
 ## A tour of what the live preview renders
 

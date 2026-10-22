@@ -239,7 +239,7 @@ class App implements Host {
   private clock = 0;
   private home = "";
   private cwd = "";
-  /** ~/.config/md-editor. */
+  /** ~/.config/markmode. */
   private configDir = "";
   /** `:export-preview`: windows show their document in its export style. */
   private exportPreview = false;
@@ -1782,11 +1782,11 @@ class App implements Host {
       ),
   };
 
-  /** Where a document's styles are: its project's `.md-editor` and ~/.config/md-editor. */
+  /** Where a document's styles are: its project's `.markmode` and ~/.config/markmode. */
   private async styleDirs(doc: Doc): Promise<StyleDirs> {
     const dir = doc.path ? dirname(doc.path) : null;
     const root = dir ? await backend.workspaceRoot(dir).catch(() => dir) : null;
-    return { project: root ? `${root === "/" ? "" : root}/.md-editor` : null, user: this.configDir || null };
+    return { project: root ? `${root === "/" ? "" : root}/.markmode` : null, user: this.configDir || null };
   }
 
   /** The name a document's style goes by: its front matter's, else the configured one. */
@@ -2193,7 +2193,7 @@ async function readImage(path: string): Promise<Uint8Array> {
   }
 }
 
-/** ~/.config/md-editor/config.toml, parsed; null when there is none, or when it is broken (said at startup). */
+/** ~/.config/markmode/config.toml, parsed; null when there is none, or when it is broken (said at startup). */
 async function readSettings(): Promise<Record<string, unknown> | null> {
   const dir = await backend.configDir().catch(() => "");
   if (!dir) return null;
@@ -2225,7 +2225,7 @@ function reviewHint(changes: number): string {
 
 /** Says once which Helix bindings were left out, and again only when that changes. */
 function reportSkippedKeys(skipped: string[]) {
-  const KEY = "md-editor.skipped-keys";
+  const KEY = "markmode.skipped-keys";
   const list = skipped.join("; ");
   try {
     if (localStorage.getItem(KEY) === list) return;

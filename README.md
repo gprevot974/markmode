@@ -1,4 +1,4 @@
-# md-editor
+# Markmode
 
 A markdown editor with Helix keybindings, live preview and export to styled `.docx`.
 
@@ -30,17 +30,17 @@ working on, read it rendered, edit it the Helix way, and export a formatted
 ```bash
 npm install
 npm run tauri dev        # development, with hot reload
-npm run tauri build      # builds release/bundle/macos/md-editor.app in your Cargo target dir
+npm run tauri build      # builds release/bundle/macos/Markmode.app in your Cargo target dir
 ```
 
 Open a file from the terminal with the built app (your `CARGO_TARGET_DIR` is
 `~/Code/cargo-target`; without it the bundle lands in `src-tauri/target/`):
 
 ```bash
-open -a ~/Code/cargo-target/release/bundle/macos/md-editor.app notes.md
+open -a ~/Code/cargo-target/release/bundle/macos/Markmode.app notes.md
 ```
 
-Copy `md-editor.app` to `/Applications` to get "Open With → md-editor" in Finder.
+Copy `Markmode.app` to `/Applications` to get "Open With → Markmode" in Finder.
 
 `npm run dev` runs the editor alone in a browser, with an in-memory sample file.
 That's useful when working on the editor itself.
@@ -243,7 +243,7 @@ agent to "address the comments in draft.md", then review its changes.
 ## Version history
 
 Each time a file is opened, saved or changed by another program, its text is
-kept as a version in `~/Library/Application Support/dev.gprevot.md-editor/history/`
+kept as a version in `~/Library/Application Support/dev.gprevot.markmode/history/`
 (the latest 100 per file; text equal to the latest version is not kept twice).
 `space h` (or `:history`) opens the versions, newest first, with a preview of
 what changed since each one. Enter brings a version back as changes to review
@@ -267,8 +267,8 @@ colors and its `markup.*` scopes color the editor and the preview. The name
 
 ## Settings
 
-Your settings are in `~/.config/md-editor/config.toml`
-(`$XDG_CONFIG_HOME/md-editor` if set). `:config-open` opens it, writing every
+Your settings are in `~/.config/markmode/config.toml`
+(`$XDG_CONFIG_HOME/markmode` if set). `:config-open` opens it, writing every
 setting, commented out, when there is none yet. It has the shape of Helix's
 config.toml, and applies over it:
 
@@ -295,7 +295,7 @@ style = "default"          # see :export-style-default
 ```
 
 Changes apply on the next start. A file that does not parse is reported at
-startup, and the defaults are used. The project's `.md-editor/config.toml`
+startup, and the defaults are used. The project's `.markmode/config.toml`
 holds only `[export]` (see [Export](#export)).
 
 ## Helix config
@@ -330,7 +330,7 @@ Set `read-helix-config = false` in your settings to ignore it.
   the encoding and line endings when they are not UTF-8 and `\n`.
   `:encoding` and `:line-ending` change them.
 - **Crash recovery.** A second after you stop typing, each buffer with unsaved
-  changes is copied to `~/Library/Application Support/dev.gprevot.md-editor/recovery/`.
+  changes is copied to `~/Library/Application Support/dev.gprevot.markmode/recovery/`.
   The copies go away on saving and on a clean exit. After a crash, the next
   start reopens them as modified buffers over the file as it is on disk: `:w`
   keeps the changes, `:reload` drops them, and `u` shows what they changed.
@@ -396,7 +396,7 @@ the document's front matter. `:export-preview` shows each document as its
 style looks, on a page of its width, and keeps up as you edit the document or
 the style. `:export-help` opens this reference in the editor.
 
-Your own styles live in `~/.config/md-editor/styles/`. `:export-style-new acme`
+Your own styles live in `~/.config/markmode/styles/`. `:export-style-new acme`
 starts one from the document's current style, with every key written out and
 commented. It opens beside the document, so with the preview on, each change
 shows as you type it. `:export-style acme` uses it for the document, and
@@ -441,8 +441,8 @@ A table's column widths are set by a directive on the line above it, `<!-- width
 
 An export style sets how the docx export looks. It's a TOML file named after the style, in one of these places, most specific first:
 
-- `.md-editor/styles/` at the root of the project (the folder holding `.git`), to share it with the project
-- `~/.config/md-editor/styles/`, for your own
+- `.markmode/styles/` at the root of the project (the folder holding `.git`), to share it with the project
+- `~/.config/markmode/styles/`, for your own
 - built in:
 
 | Style | Looks |
@@ -457,7 +457,7 @@ A document uses the style named by `style:` in its front matter. Without one, it
 | `:export-docx` | Write the Word document, next to the file or to the path given |
 | `:export-html` | Write a standalone web page in the same style, images included; print it from a browser for a PDF on the style's page |
 | `:export-style` | Pick the document's style, seeing each in the window as you move through them, or name it (`reset` removes it) |
-| `:export-style-default` | Show or set the style for documents without one, in `~/.config/md-editor/config.toml` |
+| `:export-style-default` | Show or set the style for documents without one, in `~/.config/markmode/config.toml` |
 | `:export-style-new <name>` | Start a style from the document's style, with every key commented out; `project` after the name puts it in the project |
 | `:export-style-open` | Edit the style's file, here |
 | `:export-preview` | Show the document as the style exports it: its fonts, colors and page width |
@@ -573,7 +573,7 @@ src/preview/      live preview decorations, table rendering, and the syntax adde
                   front matter, wiki-links, footnotes, math (math.ts, with KaTeX)
 src/export/       markdown → docx and → html, export styles (style.ts: every key), their files and reference
 src/theme/        Kanagawa, Helix themes, light and dark
-src/settings.ts   your settings: ~/.config/md-editor/config.toml, and its template
+src/settings.ts   your settings: ~/.config/markmode/config.toml, and its template
 src/helixConfig.ts  reading ~/.config/helix/config.toml
 src/fileformat.ts line endings and encodings
 src/backend.ts    files, dialogs, clipboard (Tauri, or an in-memory stand-in in a browser)

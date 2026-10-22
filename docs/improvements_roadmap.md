@@ -1,6 +1,6 @@
 # Improvements roadmap
 
-Ideas for taking md-editor from a personal tool to something other people
+Ideas for taking Markmode from a personal tool to something other people
 would choose. The ordering reflects priority: the first section is what would
 make the app distinctive, the next ones are what people need before they trust
 it, and the rest widens its reach.
@@ -111,7 +111,7 @@ the Helix one off.*
 
 - **Settings users can edit.** Spell-check, theme, `readHelixConfig`, text
   width and autosave live in `src/config.ts`, so they are fixed at build time.
-  Read them from `~/.config/md-editor/config.toml`, which already holds
+  Read them from `~/.config/markmode/config.toml`, which already holds
   `[export]`.
 - **Paste and drop images.** Save a pasted or dropped image next to the
   document (in `assets/`) and insert the link, as Typora and Obsidian do.

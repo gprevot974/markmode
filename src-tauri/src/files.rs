@@ -108,7 +108,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     };
     let dir = target.parent().ok_or_else(|| io::Error::other("no parent directory"))?;
     let name = target.file_name().ok_or_else(|| io::Error::other("no file name"))?;
-    let tmp: PathBuf = dir.join(format!(".{}.md-editor-{}.tmp", name.to_string_lossy(), std::process::id()));
+    let tmp: PathBuf = dir.join(format!(".{}.markmode-{}.tmp", name.to_string_lossy(), std::process::id()));
     let existing = fs::metadata(&target).ok();
 
     let mut file = match File::create(&tmp) {
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn atomic_write_keeps_links_and_permissions() {
         use std::os::unix::fs::{symlink, PermissionsExt};
-        let dir = std::env::temp_dir().join(format!("md-editor-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("markmode-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let real = dir.join("real.md");
