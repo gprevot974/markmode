@@ -1,20 +1,28 @@
-// The theme: the built-in Kanagawa, light or dark ("auto" follows the macOS
-// appearance), or any Helix theme by name. Helix's own `kanagawa` is the dark
-// half of the built-in one, so that name means the built-in, which also has a
-// light half. A choice made with `:theme` is remembered on this machine and
-// wins over the Helix config.
+// The theme: Entre-Deux, light or dark ("auto" follows the macOS appearance),
+// the built-in Kanagawa, or any Helix theme by name. Helix's own `kanagawa` is
+// the dark half of the built-in one, so that name means the built-in, which
+// also has a light half. A choice made with `:theme` is remembered on this
+// machine and wins over the Helix config.
 
 import { backend } from "../backend.ts";
+import { builtinTheme, builtinThemeNames } from "./builtinThemes.ts";
 import { loadTheme, parseTheme, themeVariables, type Theme } from "./helixTheme.ts";
 
 /** A theme name, or one theme for each system appearance (Helix's `{ light, dark }`). */
 export type ThemeChoice = string | { light: string; dark: string };
 
+/** Names for Entre-Deux, the default theme, which ships as Helix themes. */
+const ALIASES: Record<string, ThemeChoice> = {
+  auto: { light: "entre-deux-light", dark: "entre-deux" },
+  light: "entre-deux-light",
+  dark: "entre-deux",
+};
+
+/** Kanagawa, built into style.css rather than read as a Helix theme. */
 const BUILTIN: Record<string, "auto" | "light" | "dark"> = {
-  auto: "auto",
   kanagawa: "auto",
-  light: "light",
-  dark: "dark",
+  "kanagawa-lotus": "light",
+  "kanagawa-wave": "dark",
 };
 
 const KEY = "markmode.theme";
@@ -26,7 +34,6 @@ let choice: ThemeChoice = "auto";
 /** A theme shown while it is being picked in `:theme`, not yet chosen. */
 let preview: string | null = null;
 let generation = 0;
-const themes = new Map<string, Theme>();
 
 function storage(op: (s: Storage) => void) {
   try {
@@ -36,19 +43,27 @@ function storage(op: (s: Storage) => void) {
   }
 }
 
-async function helixTheme(name: string): Promise<Theme> {
-  let theme = themes.get(name);
-  if (!theme) {
-    theme = parseTheme(await loadTheme(name, (n) => backend.helixTheme(n)));
-    themes.set(name, theme);
+/** A theme file, else the one shipped with the app. */
+async function readTheme(name: string) {
+  try {
+    return await backend.helixTheme(name);
+  } catch (err) {
+    const shipped = builtinTheme(name);
+    if (!shipped) throw err;
+    return shipped;
   }
-  return theme;
+}
+
+/** Read from disk each time, so an edited theme file applies the next time it is chosen. */
+async function helixTheme(name: string): Promise<Theme> {
+  return parseTheme(await loadTheme(name, readTheme));
 }
 
 async function apply() {
   const gen = ++generation;
   const systemIsLight = systemLight.matches;
-  const shown = preview ?? choice;
+  const picked = preview ?? choice;
+  const shown = typeof picked === "string" ? (ALIASES[picked] ?? picked) : picked;
   const name = typeof shown === "string" ? shown : systemIsLight ? shown.light : shown.dark;
   const builtin = BUILTIN[name];
   let light: boolean;
@@ -128,5 +143,6 @@ export function currentTheme(): string {
 /** For completion: the built-in names, then every Helix theme found. */
 export async function themeNames(): Promise<string[]> {
   const helix = await backend.helixThemes().catch(() => []);
-  return [...Object.keys(BUILTIN), ...helix.filter((n) => !(n in BUILTIN))];
+  const named = new Set([...Object.keys(ALIASES), ...Object.keys(BUILTIN), ...builtinThemeNames]);
+  return [...named, ...helix.filter((n) => !named.has(n))];
 }

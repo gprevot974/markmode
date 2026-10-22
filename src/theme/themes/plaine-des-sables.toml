@@ -1,0 +1,52 @@
+"ui.background" = { bg = "sand" }
+"ui.text" = "brown"
+"ui.statusline" = { fg = "brown", bg = "sand-panel" }
+"ui.cursorline.primary" = { bg = "sand-line" }
+"ui.selection" = { bg = "sky-soft" }
+"ui.selection.primary" = { bg = "sky-soft" }
+"ui.linenr" = { fg = "grey" }
+"ui.linenr.selected" = { fg = "orange" }
+"ui.statusline.normal" = { bg = "blue-dark" }
+"ui.statusline.select" = { bg = "rose" }
+
+"markup.heading.1" = "orange"
+"markup.heading.2" = "blue-dark"
+"markup.heading.3" = "green-dark"
+"markup.heading.4" = "gold-dark"
+"markup.bold" = "rose"
+"markup.italic" = "grey-dark"
+"markup.raw.inline" = "green-dark"
+"markup.link.text" = "blue-dark"
+"markup.link.url" = "blue-dark"
+"markup.list" = "orange-dark"
+"markup.quote" = "grey-dark"
+
+"diff.plus" = "green-dark"
+"diff.minus" = "rose"
+"info" = "orange-dark"
+"error" = "rose"
+
+"comment" = "grey-dark"
+"keyword" = "rose"
+"function" = "blue-dark"
+"string" = "green-dark"
+"type" = "gold-dark"
+"constant" = "orange"
+"constant.numeric" = "orange-dark"
+"operator" = "blue-dark"
+"variable.other.member" = "brown"
+
+[palette]
+sand = "#faf6f4"
+brown = "#542519"
+orange = "#a85e3d"
+orange-dark = "#a85e3d"
+gold-dark = "#917444"
+green-dark = "#698048"
+blue-dark = "#4c8093"
+rose = "#a7666e"
+grey = "#8c9fa4"
+grey-dark = "#687c82"
+sky-soft = "#dbe3e7"
+sand-panel = "#ede9e8"
+sand-line = "#f4f0ee"

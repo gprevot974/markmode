@@ -4,8 +4,12 @@
 //
 // Uses the installed Chrome; set CHROME_PATH to use another Chromium.
 
+import { readFileSync } from "node:fs";
 import { chromium, type Browser, type BrowserContextOptions, type Page } from "playwright-core";
 import { createServer } from "vite";
+
+// The suites' own copy of the sample, so examples/sample.md can change freely.
+const sample = readFileSync(new URL("./sample.md", import.meta.url), "utf8");
 
 export interface Harness {
   page: Page;
@@ -23,6 +27,10 @@ const SUITES = ["editing", "spelling", "theme", "files", "review", "prose", "exp
 
 async function open(browser: Browser, url: string, options: BrowserContextOptions, check: Harness["check"]) {
   const context = await browser.newContext({ viewport: { width: 1300, height: 860 }, ...options });
+  // As a file the tab wrote, which src/backend.ts takes over the bundled one.
+  await context.addInitScript((text) => {
+    if (sessionStorage.getItem("markmode.file./sample.md") === null) sessionStorage.setItem("markmode.file./sample.md", text);
+  }, sample);
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));

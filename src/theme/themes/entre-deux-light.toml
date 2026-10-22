@@ -1,0 +1,65 @@
+# L'Entre-Deux, light: the dark theme flipped. Pale yellow page, dark blue
+# text; the poster's darker blues and teals stand in for its lighter teals and
+# mint, and the grey and the coral are darkened. Flame, green, violet and
+# magenta are the poster's colors, darkened where needed.
+
+"ui.background" = { bg = "cream" }
+"ui.text" = "ink"
+
+# Surfaces
+"ui.statusline" = { fg = "blue-mid", bg = "cream-panel" }
+"ui.cursorline.primary" = { bg = "cream-line" }
+"ui.selection" = { bg = "mint-soft" }
+"ui.selection.primary" = { bg = "mint-soft" }
+"ui.linenr" = { fg = "grey-light" }
+"ui.linenr.selected" = { fg = "flame" }
+
+# Mode colors: fills.
+"ui.statusline.normal" = { bg = "teal-dark" }
+"ui.statusline.select" = { bg = "violet" }
+
+# Prose
+"markup.heading.1" = "flame"
+"markup.heading.2" = "blue-mid"
+"markup.heading.3" = "teal-dark"
+"markup.heading.4" = "teal-deep"
+"markup.bold" = "coral"
+"markup.italic" = "violet"
+"markup.raw.inline" = "green"
+"markup.link.text" = "teal-dark"
+"markup.link.url" = "teal-dark"
+"markup.list" = "coral"
+"markup.quote" = "violet"
+"diff.plus" = "green"
+"diff.minus" = "magenta"
+"info" = "coral"
+"error" = "magenta"
+
+# Code
+"comment" = "slate"
+"keyword" = "violet"
+"function" = "teal-dark"
+"string" = "green"
+"type" = "coral"
+"constant" = "flame"
+"constant.numeric" = "coral"
+"operator" = "teal-dark"
+"variable.other.member" = "ink"
+
+[palette]
+cream = "#f0eedb"
+ink = "#173146"
+blue-mid = "#2c5470"
+teal-deep = "#478387"
+teal-dark = "#37636c"
+mint = "#c3dad7"
+slate = "#586a79"
+coral = "#a15657"
+flame = "#b26b4c"
+magenta = "#a54460"
+green = "#3f744d"
+violet = "#7e5983"
+mint-soft = "#dce2d8"
+cream-panel = "#e7e5d1"
+cream-line = "#edebd9"
+grey-light = "#b2b1a5"

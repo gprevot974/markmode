@@ -10,9 +10,10 @@ export const config = {
   // Read ~/.config/helix/config.toml and use its theme, options and keys.
   readHelixConfig: true,
 
-  // "auto" (or "kanagawa") follows the macOS appearance: wave when dark, lotus
-  // when light; "dark" or "light" pins one; any other name is a Helix theme.
-  // `:theme` overrides it.
+  // "auto" is Entre-Deux following the macOS appearance: entre-deux when dark,
+  // entre-deux-light when light; "dark" or "light" pins one; "kanagawa" is
+  // Kanagawa the same way; any other name is a Helix theme. `:theme`
+  // overrides it.
   theme: "auto" as ThemeChoice,
 
   // [editor]

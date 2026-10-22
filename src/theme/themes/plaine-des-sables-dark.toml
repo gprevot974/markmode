@@ -1,0 +1,52 @@
+"ui.background" = { bg = "night" }
+"ui.text" = "cream"
+"ui.statusline" = { fg = "cream", bg = "night-panel" }
+"ui.cursorline.primary" = { bg = "night-line" }
+"ui.selection" = { bg = "sel" }
+"ui.selection.primary" = { bg = "sel" }
+"ui.linenr" = { fg = "grey-dim" }
+"ui.linenr.selected" = { fg = "blue" }
+"ui.statusline.normal" = { bg = "orange" }
+"ui.statusline.select" = { bg = "rose" }
+
+"markup.heading.1" = "blue"
+"markup.heading.2" = "orange"
+"markup.heading.3" = "green"
+"markup.heading.4" = "gold"
+"markup.bold" = "rose"
+"markup.italic" = "green"
+"markup.raw.inline" = "sky"
+"markup.link.text" = "orange"
+"markup.link.url" = "orange"
+"markup.list" = "blue"
+"markup.quote" = "grey"
+
+"diff.plus" = "green"
+"diff.minus" = "rose"
+"info" = "blue"
+"error" = "rose"
+
+"comment" = "grey"
+"keyword" = "rose"
+"function" = "orange"
+"string" = "green"
+"type" = "gold"
+"constant" = "blue"
+"constant.numeric" = "blue"
+"operator" = "orange"
+"variable.other.member" = "cream"
+
+[palette]
+night = "#1e110c"
+night-panel = "#30231f"
+night-line = "#281b17"
+cream = "#f9eae5"
+orange = "#bb6a46"
+gold = "#d5ad68"
+green = "#839f5a"
+blue = "#5e9eb5"
+rose = "#a57077"
+grey = "#8c9fa4"
+grey-dim = "#565555"
+sky = "#b1d5e4"
+sel = "#62503e"

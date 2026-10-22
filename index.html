@@ -13,7 +13,7 @@
         const root = document.documentElement;
         const t = localStorage.getItem("markmode.theme");
         const helix = JSON.parse(localStorage.getItem("markmode.theme-vars") ?? "null");
-        let light = t === "light" || (t !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
+        let light = t === "light" || t === "kanagawa-lotus" || (t !== "dark" && t !== "kanagawa-wave" && matchMedia("(prefers-color-scheme: light)").matches);
         if (helix) {
           light = helix.light;
           for (const [k, v] of Object.entries(helix.vars)) root.style.setProperty(k, v);

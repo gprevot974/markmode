@@ -1,0 +1,64 @@
+# L'Entre-Deux: dark theme from the poster's colors.
+# Darkest blue background, pale yellow text. The blue surfaces below teal-deep
+# are not on the poster: they are shades of its darkest blue.
+
+"ui.background" = { bg = "blue-night" }
+"ui.text" = "yellow"
+
+# Surfaces
+"ui.statusline" = { fg = "mint", bg = "blue-deep" }
+"ui.cursorline.primary" = { bg = "blue-line" }
+"ui.selection" = { bg = "blue-mid" }
+"ui.selection.primary" = { bg = "blue-mid" }
+"ui.linenr" = { fg = "teal-deep" }
+"ui.linenr.selected" = { fg = "flame" }
+
+# Mode colors: fills. Violet is the select-mode fill and tints the selection
+# in select mode; it is also what code blocks use for keywords.
+"ui.statusline.normal" = { bg = "teal-light" }
+"ui.statusline.select" = { bg = "violet" }
+
+# Prose
+"markup.heading.1" = "flame"
+"markup.heading.2" = "mint"
+"markup.heading.3" = "teal-light"
+"markup.heading.4" = "teal-bright"
+"markup.bold" = "coral"
+"markup.italic" = "green"
+"markup.raw.inline" = "mint"
+"markup.link.text" = "teal-light"
+"markup.link.url" = "teal-light"
+"markup.list" = "coral"
+"markup.quote" = "violet"
+"diff.plus" = "green"
+"diff.minus" = "magenta"
+"info" = "coral"
+"error" = "magenta"
+
+# Code
+"comment" = "grey"
+"keyword" = "violet"
+"function" = "teal-light"
+"string" = "green"
+"type" = "coral"
+"constant" = "flame"
+"constant.numeric" = "coral"
+"operator" = "teal-light"
+"variable.other.member" = "yellow"
+
+[palette]
+blue-night = "#212f3a"
+blue-mid = "#3c5364"
+teal-deep = "#3c6f72"
+teal-bright = "#4b8a88"
+teal-light = "#71afa8"
+mint = "#c3dad7"
+grey = "#a8a696"
+yellow = "#fcfad5"
+coral = "#e08d90"
+flame = "#cc785d"
+magenta = "#d66589"
+green = "#6fa181"
+violet = "#b98abd"
+blue-deep = "#162129"
+blue-line = "#293946"

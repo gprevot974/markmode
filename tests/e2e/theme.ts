@@ -1,4 +1,4 @@
-// Light and dark Kanagawa, `:theme`, and Helix themes.
+// Light and dark Entre-Deux, Kanagawa, `:theme`, and Helix themes.
 
 import type { Harness } from "./run.ts";
 
@@ -54,7 +54,10 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   await run("theme nonexistent");
   const message = await ev(() => document.getElementById("message")!.textContent);
   check("an unknown theme is an error and changes nothing", message!.includes("nonexistent") && (await theme()).bg === paper.bg, message);
+  await run("theme kanagawa");
+  const kanagawa = await theme();
+  check("kanagawa is the built-in, without leftovers", kanagawa.mode === "light" && kanagawa.bg === "rgb(242, 236, 188)" && kanagawa.h1 === "#4d699b", kanagawa);
   await run("theme auto");
   const auto = await theme();
-  check("back to the built-in theme, without leftovers", auto.mode === "light" && auto.bg === "rgb(242, 236, 188)" && auto.h1 === "#4d699b", auto);
+  check("auto is entre-deux-light on a light system", auto.mode === "light" && auto.bg === "rgb(240, 238, 219)", auto);
 }
