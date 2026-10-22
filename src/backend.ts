@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { message as messageDialog, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import sample from "../examples/sample.md?raw";
@@ -28,6 +29,8 @@ export interface Backend {
   unwatch(path: string): Promise<void>;
   onFileChanged(cb: (path: string) => void): void;
   onOpenFile(cb: (path: string) => void): void;
+  /** Files dragged over the window from Finder, and dropped on it. */
+  onDragDrop(cb: (e: DragDrop) => void): void;
   onFocusLost(cb: () => void): void;
   setTitle(title: string): Promise<void>;
   /**
@@ -46,6 +49,10 @@ export interface Backend {
   spellingSuggestions(word: string): Promise<string[]>;
   learnWord(word: string): Promise<void>;
   clipboardRead(): Promise<string>;
+  /** The image files copied in Finder, as paths. */
+  clipboardFiles(): Promise<string[]>;
+  /** The image on the clipboard, as PNG; empty when there is none. */
+  clipboardImage(): Promise<Uint8Array>;
   clipboardWrite(text: string): Promise<void>;
   listDir(path: string): Promise<DirEntry[]>;
   /** Every file under `root` (relative paths), minus hidden and git-ignored ones. */
@@ -59,6 +66,12 @@ export interface Backend {
   homeDir(): Promise<string>;
   /** ~/.config/md-editor: config.toml and the export styles. */
   configDir(): Promise<string>;
+  /** Moves files to the Trash. */
+  trashFiles(paths: string[]): Promise<void>;
+  /** Keeps a copy of images about to be cleaned up, for imageBringBack. */
+  imagesSetAside(paths: string[]): Promise<void>;
+  /** Puts back an image cleaned up earlier, when it is missing; false when none was kept. */
+  imageBringBack(path: string): Promise<boolean>;
   /** Makes a directory, with the ones above it. */
   createDir(path: string): Promise<void>;
   currentDir(): Promise<string>;
@@ -82,6 +95,14 @@ export interface Backend {
   /** The text the file's changes are reviewed against (see history.rs); null when there is none yet. */
   historyBaseline(path: string): Promise<string | null>;
   historySetBaseline(path: string, text: string): Promise<void>;
+}
+
+/** A drag from Finder: the files (on enter and drop) and where the pointer is, in CSS pixels. */
+export interface DragDrop {
+  type: "enter" | "over" | "drop" | "leave";
+  paths: string[];
+  x: number;
+  y: number;
 }
 
 export type SnapshotKind = "opened" | "saved" | "outside";
@@ -112,7 +133,8 @@ const FILTERS = {
 const tauriBackend: Backend = {
   readText: (path) => invoke("read_text", { path }),
   writeText: (path, contents, format) => invoke("write_text", { path, contents, format }),
-  writeBytes: (path, bytes) => invoke("write_bytes", { path, bytes: Array.from(bytes) }),
+  // The bytes go as the request's body, the path in a header (see write_bytes).
+  writeBytes: (path, bytes) => invoke("write_bytes", bytes, { headers: { path: encodeURIComponent(path) } }),
   readBytes: async (path) => new Uint8Array(await invoke<ArrayBuffer>("read_bytes", { path })),
   async pickOpen() {
     const picked = await openDialog({ multiple: false, directory: false, filters: FILTERS.md });
@@ -127,6 +149,17 @@ const tauriBackend: Backend = {
   },
   onOpenFile(cb) {
     void listen<string>("open-file", (e) => cb(e.payload));
+  },
+  // The webview takes drags from other apps itself, so the page sees no drag
+  // events for them, only these. Their position is typed as physical pixels,
+  // but on macOS it comes in points, which are already CSS pixels.
+  onDragDrop(cb) {
+    const scale = navigator.platform.startsWith("Mac") ? 1 : devicePixelRatio;
+    void getCurrentWebview().onDragDropEvent(({ payload: p }) => {
+      if (p.type === "leave") return cb({ type: "leave", paths: [], x: 0, y: 0 });
+      const paths = p.type === "over" ? [] : p.paths;
+      cb({ type: p.type, paths, x: p.position.x / scale, y: p.position.y / scale });
+    });
   },
   onFocusLost(cb) {
     window.addEventListener("blur", cb);
@@ -159,6 +192,8 @@ const tauriBackend: Backend = {
   learnWord: (word) => invoke("learn_word", { word }),
   clipboardRead: async () => (await readText()) ?? "",
   clipboardWrite: (text) => writeText(text),
+  clipboardFiles: () => invoke("clipboard_files"),
+  clipboardImage: async () => new Uint8Array(await invoke<ArrayBuffer>("clipboard_image")),
   listDir: (path) => invoke("list_dir", { path }),
   listFiles: (root) => invoke("list_files", { root }),
   searchFiles: (root, pattern) => invoke("search_files", { root, pattern }),
@@ -167,6 +202,9 @@ const tauriBackend: Backend = {
   homeDir: () => invoke("home_dir"),
   configDir: () => invoke("config_dir"),
   createDir: (path) => invoke("create_dir", { path }),
+  trashFiles: (paths) => invoke("trash_files", { paths }),
+  imagesSetAside: (paths) => invoke("images_set_aside", { paths }),
+  imageBringBack: (path) => invoke("image_bring_back", { path }),
   currentDir: () => invoke("current_dir"),
   recoveryWrite: (id, contents) => invoke("recovery_write", { id, contents }),
   recoveryRemove: (id) => invoke("recovery_remove", { id }),
@@ -212,6 +250,8 @@ const memoryFiles = new Map<string, string>([
 ]);
 
 const watched = new Set<string>();
+/** Images :images-clean! cleaned up, kept for imageBringBack. */
+const setAside = new Map<string, string>();
 let fileChanged: (path: string) => void = () => {};
 
 type StoredSnapshot = Snapshot & { text: string };
@@ -265,6 +305,8 @@ const browserBackend: Backend = {
     fileChanged = cb;
   },
   onOpenFile: () => {},
+  // Drops reach the page as drop events here (see imageInput in main.ts).
+  onDragDrop: () => {},
   onFocusLost(cb) {
     window.addEventListener("blur", cb);
   },
@@ -283,6 +325,9 @@ const browserBackend: Backend = {
   learnWord: async () => {},
   clipboardRead: () => navigator.clipboard.readText(),
   clipboardWrite: (text) => navigator.clipboard.writeText(text),
+  // The page's paste event has the clipboard's images here.
+  clipboardFiles: async () => [],
+  clipboardImage: async () => new Uint8Array(),
   async listDir(path) {
     const dir = path.endsWith("/") ? path : `${path}/`;
     const names = new Map<string, boolean>();
@@ -312,6 +357,25 @@ const browserBackend: Backend = {
   homeDir: async () => "",
   configDir: async () => "/config/md-editor",
   createDir: async () => {},
+  async trashFiles(paths) {
+    for (const path of paths) {
+      // A folder goes with what is in it.
+      for (const p of [...memoryFiles.keys()].filter((p) => p === path || p.startsWith(`${path}/`))) {
+        memoryFiles.delete(p);
+        tabStorage()?.removeItem(FILE + p);
+      }
+    }
+  },
+  async imagesSetAside(paths) {
+    for (const path of paths) setAside.set(path, memoryFiles.get(path)!);
+  },
+  async imageBringBack(path) {
+    const kept = setAside.get(path);
+    if (kept === undefined || memoryFiles.has(path)) return false;
+    await this.writeText(path, kept);
+    setAside.delete(path);
+    return true;
+  },
   currentDir: async () => "/",
   // Kept in the page's storage, so reloading the page plays the part of a
   // restart after a crash.

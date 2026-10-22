@@ -1,19 +1,20 @@
-import { EditorSelection, EditorState, type Extension, type StateEffect, Text, Transaction } from "@codemirror/state";
+import { EditorSelection, EditorState, type Extension, Prec, type StateEffect, Text, Transaction } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { LanguageDescription, type LanguageSupport } from "@codemirror/language";
 
+import { parse as parseToml } from "smol-toml";
 import { config } from "./config.ts";
-import { backend } from "./backend.ts";
+import { backend, type DragDrop, isTauri } from "./backend.ts";
 import { helixState, modeField, nextBoundaryIn, setMode, type Mode } from "./helix/state.ts";
 import { helixKeys } from "./helix/dispatcher.ts";
 import { normalKeys, insertKeys, mergeKeys } from "./helix/keymap.ts";
 import { selectionDecorations } from "./helix/cursor.ts";
 import { cursorLines } from "./helix/cursorline.ts";
 import { jumpLabels } from "./helix/jumplabels.ts";
-import { commands, setSearchPattern, type Host, type WindowCommand } from "./helix/commands.ts";
+import { commands, pasteText, setSearchPattern, type Host, type WindowCommand } from "./helix/commands.ts";
 import { livePreview, setTableWidths, setTotalRows, tableWidths } from "./preview/livePreview.ts";
 import { frontMatterSyntax } from "./preview/frontMatterSyntax.ts";
 import { wikiLinkSyntax } from "./preview/wikiLinkSyntax.ts";
@@ -42,6 +43,9 @@ import type { Snapshot, SnapshotKind } from "./backend.ts";
 import { kanagawa } from "./theme/kanagawa.ts";
 import { currentTheme, endThemePreview, initTheme, previewTheme, setTheme, themeNames } from "./theme/appearance.ts";
 import { applyHelixConfig } from "./helixConfig.ts";
+import { applySettings, readsHelixConfig, SETTINGS_TEMPLATE } from "./settings.ts";
+import { altText, freeName, imageFiles, imageLink, type ImageSource, inside, isImageName, pastedName, unusedImages } from "./imageInput.ts";
+import { hideDropHint, showDropHint } from "./ui/dropHint.ts";
 import { openPrompt, type Completion, type PromptOptions } from "./ui/prompt.ts";
 import { openPicker, type OpenHow } from "./ui/picker.ts";
 import { fuzzyFilter } from "./ui/fuzzy.ts";
@@ -102,6 +106,41 @@ const followOnClick = (host: { followLink(view: EditorView, pos: number): void }
       return true;
     },
   });
+
+interface ImageHost {
+  insertImages(view: EditorView, images: ImageSource[], pos?: number): Promise<void>;
+  pasteFromSystem(view: EditorView, text: string): Promise<void>;
+}
+
+/** Images pasted with Cmd-V, or dropped where the page sees the drop (the browser), go into the document. */
+const imageInput = (host: ImageHost) =>
+  Prec.highest(
+    EditorView.domEventHandlers({
+      paste(e, view) {
+        const images = imageFiles(e.clipboardData);
+        if (images.length) {
+          e.preventDefault();
+          void host.insertImages(view, images);
+          return true;
+        }
+        // The webview leaves some images out of the event: ask the system when
+        // there is no text, or only a file name (Finder copies a file as its name).
+        const text = e.clipboardData?.getData("text/plain") ?? "";
+        const fileName = isImageName(text.trim()) && !text.includes("\n");
+        if (!isTauri || (text && !fileName)) return false;
+        e.preventDefault();
+        void host.pasteFromSystem(view, text);
+        return true;
+      },
+      drop(e, view) {
+        const images = imageFiles(e.dataTransfer);
+        if (!images.length) return false;
+        e.preventDefault();
+        void host.insertImages(view, images, view.posAtCoords({ x: e.clientX, y: e.clientY }) ?? undefined);
+        return true;
+      },
+    }),
+  );
 
 const languageOf = (path: string) => LanguageDescription.matchFilename(languages, basename(path));
 
@@ -221,6 +260,7 @@ class App implements Host {
       doc.reloadTimer = window.setTimeout(() => void this.onDiskChange(doc), 120);
     });
     backend.onOpenFile((path) => void this.openPath(path).catch((e) => this.message(String(e), "error")));
+    backend.onDragDrop((e) => this.onDragDrop(e));
     backend.onQuitRequested(() => void this.requestQuit());
     backend.onFocusLost(() => {
       if (config.autoSaveOnFocusLost) void this.writeAll(true);
@@ -253,7 +293,7 @@ class App implements Host {
       config.lineNumbers ? lineNumbers() : [],
       cursorLines(config.cursorline),
       config.softWrap ? EditorView.lineWrapping : [],
-      prose ? [markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [frontMatterSyntax, wikiLinkSyntax, footnoteSyntax, mathSyntax] }), livePreview, followOnClick(this), documentPath.of(path)] : (plain ?? []),
+      prose ? [markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [frontMatterSyntax, wikiLinkSyntax, footnoteSyntax, mathSyntax] }), livePreview, followOnClick(this), imageInput(this), documentPath.of(path)] : (plain ?? []),
       comments,
       reviewSlot(original),
       config.spellcheck && prose
@@ -376,6 +416,160 @@ class App implements Host {
     this.show(win, doc);
     if (!previous.path && !this.stateOf(previous).doc.length && !this.windowsShowing(previous).length) {
       this.removeDoc(previous);
+    }
+  }
+
+  /**
+   * Saves images next to the document, in the images folder, and links them at
+   * `pos`, or where the cursor is. One already in the document's folder is
+   * linked where it is.
+   */
+  async insertImages(view: EditorView, images: ImageSource[], pos?: number) {
+    const win = this.layout.windows().find((w) => w.view === view);
+    const path = win?.doc.path;
+    if (!win || !path) return this.message("save the document first: pasted images go next to it", "error");
+    const dir = dirname(path);
+    const folder = config.imageFolder;
+    const target = folder ? `${dir}/${folder}` : dir;
+    let taken: string[] | null = null;
+    const links: string[] = [];
+    let saved = 0;
+    for (const image of images) {
+      const name = "path" in image ? basename(image.path) : image.name;
+      const near = "path" in image ? inside(dir, image.path) : null;
+      if (near) {
+        links.push(imageLink(near, altText(name)));
+        continue;
+      }
+      taken ??= (await backend.listDir(target).catch(() => [])).map((e) => e.name);
+      const free = freeName(name, taken);
+      taken.push(free);
+      const bytes = "path" in image ? await backend.readBytes(image.path) : new Uint8Array(await image.data.arrayBuffer());
+      await backend.createDir(target);
+      await backend.writeBytes(`${target}/${free}`, bytes);
+      links.push(imageLink(folder ? `${folder}/${free}` : free, altText(free)));
+      saved++;
+    }
+    const text = links.join("\n");
+    const insertMode = view.state.field(modeField) === "insert";
+    if (pos !== undefined) {
+      view.dispatch({
+        changes: { from: pos, insert: text },
+        selection: insertMode ? EditorSelection.cursor(pos + text.length) : EditorSelection.single(pos, pos + text.length),
+        userEvent: "input.drop",
+      });
+    } else if (insertMode) {
+      view.dispatch(view.state.replaceSelection(text), { userEvent: "input.paste", scrollIntoView: true });
+    } else {
+      pasteText(view, text);
+    }
+    this.focus(win);
+    const n = images.length > 1 ? `${images.length} images` : "image";
+    this.message(saved ? `${n} saved in ${folder || "the document's folder"}/` : `${n} linked`);
+  }
+
+  /**
+   * The images in the document's images folder that no markdown file in the
+   * workspace mentions (open buffers as they are, unsaved changes included);
+   * with `trash`, moves them to the Trash, where they can be put back from.
+   */
+  private async cleanImages(trash: boolean) {
+    const path = this.active.doc.path;
+    const folder = config.imageFolder;
+    if (!path) return this.message("images-clean: save the document first", "error");
+    if (!folder) return this.message("images-clean: no images folder ([images] folder in your settings)", "error");
+    const dir = `${dirname(path)}/${folder}`;
+    const names = (await backend.listDir(dir).catch(() => []))
+      .filter((e) => !e.isDir && isImageName(e.name))
+      .map((e) => e.name);
+    if (!names.length) return this.message(`no images in ${folder}/`);
+    const root = await backend.workspaceRoot(dirname(path)).catch(() => dirname(path));
+    const base = root.endsWith("/") ? root : `${root}/`;
+    const files = (await backend.listFiles(root)).filter((rel) => MARKDOWN_PATH.test(rel)).map((rel) => base + rel);
+    const texts = await Promise.all(files.map(async (p) => (await this.styleFs.read(p)) ?? ""));
+    for (const doc of this.docs) {
+      if (doc.path && MARKDOWN_PATH.test(doc.path) && !files.includes(doc.path)) texts.push(this.stateOf(doc).doc.toString());
+    }
+    const unused = unusedImages(names, texts);
+    if (!unused.length) return this.message(`every image in ${folder}/ is used`);
+    const n = unused.length > 1 ? `${unused.length} images` : "1 image";
+    if (!trash) return this.message(`${n} in ${folder}/ no markdown file uses: ${unused.join(", ")} (:images-clean! moves them to the Trash)`);
+    const paths = unused.map((name) => `${dir}/${name}`);
+    // Kept aside too, so a link that comes back (a version from the history,
+    // an undo) brings its image back: see readImage.
+    await backend.imagesSetAside(paths);
+    // A folder left with nothing in it (but Finder's .DS_Store) goes as a whole.
+    const left = (await backend.listDir(dir)).filter((e) => !unused.includes(e.name) && e.name !== ".DS_Store");
+    await backend.trashFiles(left.length ? paths : [dir]);
+    this.message(`moved ${left.length ? n : `${folder}/, with ${n},`} to the Trash: ${unused.join(", ")}`);
+  }
+
+  /** Pastes what the paste event left out: images copied in Finder, or an image (a screenshot); else the text. */
+  async pasteFromSystem(view: EditorView, text: string) {
+    try {
+      const files = (await backend.clipboardFiles()).filter(isImageName);
+      if (files.length) return await this.insertImages(view, files.map((path) => ({ path })));
+      const png = await backend.clipboardImage();
+      if (png.length) return await this.insertImages(view, [{ name: pastedName("image/png"), data: new Blob([png as BlobPart]) }]);
+    } catch (err) {
+      return this.message(`paste: ${err}`, "error");
+    }
+    if (!text) return this.message("nothing to paste: the clipboard holds no text or image");
+    if (view.state.field(modeField) === "insert") view.dispatch(view.state.replaceSelection(text), { userEvent: "input.paste", scrollIntoView: true });
+    else pasteText(view, text);
+  }
+
+  private dragPaths: string[] = [];
+
+  /** Files dragged from Finder: a hint while they are over the window, then the drop. */
+  private onDragDrop(e: DragDrop) {
+    if (e.type === "enter") this.dragPaths = e.paths;
+    if (e.type === "leave" || e.type === "drop") {
+      hideDropHint();
+      this.dragPaths = [];
+    }
+    if (e.type === "leave") return;
+    if (e.type === "drop") {
+      void this.onFileDrop(e.paths, e.x, e.y).catch((err) => this.message(String(err), "error"));
+      return;
+    }
+    const { win, images, others, pos } = this.dropPlan(this.dragPaths, e.x, e.y);
+    const path = win.doc.path;
+    const parts: string[] = [];
+    if (images.length && !path) parts.push("save the document first to insert images");
+    else if (images.length) {
+      const copied = images.filter((p) => !inside(dirname(path!), p)).length;
+      const n = images.length > 1 ? `${images.length} images` : "image";
+      parts.push(`insert ${n}${copied ? ` (${copied < images.length ? "some " : ""}copied to ${config.imageFolder || "the document's folder"}/)` : ""}`);
+    }
+    if (others.length) parts.push(`open ${others.length > 1 ? `${others.length} files` : basename(others[0])}`);
+    const text = parts.join(", ");
+    const coords = pos !== null && path ? win.view.coordsAtPos(pos) : null;
+    showDropHint(
+      win.el.getBoundingClientRect(),
+      text.charAt(0).toUpperCase() + text.slice(1),
+      coords && { left: coords.left - 1, top: coords.top, height: coords.bottom - coords.top },
+    );
+  }
+
+  /** What dropping `paths` at (x, y) does: the window under it, the images linked there (and where), the files opened. */
+  private dropPlan(paths: string[], x: number, y: number) {
+    const under = document.elementFromPoint(x, y);
+    const win = this.layout.windows().find((w) => w.el.contains(under)) ?? this.active;
+    const images = isMarkdownPath(win.doc.path) ? paths.filter(isImageName) : [];
+    const others = paths.filter((p) => !images.includes(p));
+    const pos = images.length ? win.view.posAtCoords({ x, y }, false) : null;
+    return { win, images, others, pos };
+  }
+
+  /** Files dropped from Finder: images go into the markdown document under the pointer, other files open. */
+  private async onFileDrop(paths: string[], x: number, y: number) {
+    const { win, images, others, pos } = this.dropPlan(paths, x, y);
+    if (images.length) await this.insertImages(win.view, images.map((path) => ({ path })), pos ?? undefined);
+    if (others.length) this.focus(win);
+    for (const path of others) {
+      if (EXTERNAL.test(path)) await backend.openExternal(path);
+      else await this.openPath(path);
     }
   }
 
@@ -865,14 +1059,24 @@ class App implements Host {
           doc.format = { ...doc.format, lineEnding: arg as LineEnding };
           return this.renderAllStatus();
         case "config-open": {
-          const path = await backend.helixConfigPath();
-          if (!path) return this.message("no Helix config here", "error");
+          if (!this.configDir) return this.message("config-open: no config directory here", "error");
+          const path = `${this.configDir}/config.toml`;
+          if ((await this.styleFs.read(path)) === null) {
+            await backend.createDir(this.configDir);
+            await backend.writeText(path, SETTINGS_TEMPLATE);
+          }
           await this.openPath(path);
           return this.message(
             skippedKeys.length
               ? `skipped bindings, using commands this editor lacks: ${skippedKeys.join("; ")}`
-              : "every binding in it is in use (changes apply on the next start)",
+              : "changes apply on the next start",
           );
+        }
+        case "config-open-helix": {
+          const path = await backend.helixConfigPath();
+          if (!path) return this.message("no Helix config here", "error");
+          await this.openPath(path);
+          return this.message(config.readHelixConfig ? "changes apply on the next start" : "not read: read-helix-config = false in your settings");
         }
         case "zoom": {
           if (!arg) return this.message(`zoom ${Math.round(zoomLevel() * 100)}%`);
@@ -883,6 +1087,8 @@ class App implements Host {
         }
         case "history":
           return this.historyPicker();
+        case "images-clean":
+          return await this.cleanImages(force);
         case "word-count":
           return this.wordCount();
         case "reflow": {
@@ -1095,7 +1301,8 @@ class App implements Host {
     this.snapshot(target, text.toString(), "saved");
     this.scheduleRecovery();
     this.renderAllStatus();
-    this.message(`written ${basename(target)} (${text.lines} lines)`);
+    const settings = this.configDir && target === `${this.configDir}/config.toml`;
+    this.message(`written ${basename(target)} (${text.lines} lines)${settings ? ", settings apply on the next start" : ""}`);
     return true;
   }
 
@@ -1901,7 +2108,7 @@ class App implements Host {
     const resolved = await this.styleOf(doc);
     if (!resolved.found) return this.message(`no export style named ${resolved.name} (:export-style lists them)`, "error");
     const text = this.stateOf(doc).doc.toString();
-    const images = await loadImages(text, doc.path, (p) => backend.readBytes(p));
+    const images = await loadImages(text, doc.path, readImage);
     let size: number;
     // Loaded on first export: the docx library is most of the bundle.
     if (format === "docx") {
@@ -1946,10 +2153,12 @@ class App implements Host {
   }
 }
 
-// The Helix config comes first: the theme and the keymaps depend on it.
+// The settings come first: the theme and the keymaps depend on them. Yours
+// apply over the Helix config, which they can also turn off.
 const startupErrors: string[] = [];
 let skippedKeys: string[] = [];
-if (config.readHelixConfig) {
+const settings = await readSettings();
+if (readsHelixConfig(settings)) {
   try {
     const toml = await backend.helixConfig();
     if (toml) skippedKeys = applyHelixConfig(toml);
@@ -1957,10 +2166,11 @@ if (config.readHelixConfig) {
     startupErrors.push(`Helix config: ${err}`);
   }
 }
+if (settings) skippedKeys.push(...applySettings(settings));
 const themeError = await initTheme(config.theme);
 if (themeError) startupErrors.push(themeError);
 initZoom();
-setImageReader((path) => backend.readBytes(path));
+setImageReader(readImage);
 const app = new App();
 await app.init();
 const recovered = await app.restoreRecovered();
@@ -1970,6 +2180,38 @@ else if (recovered) app.replace(app.active, recovered);
 app.view.focus();
 if (startupErrors.length) app.message(startupErrors.join("; "), "error");
 else reportSkippedKeys(skippedKeys);
+
+/** Reads an image; one :images-clean! cleaned up comes back when a link to it is shown again. */
+async function readImage(path: string): Promise<Uint8Array> {
+  try {
+    return await backend.readBytes(path);
+  } catch (err) {
+    const back = await backend.imageBringBack(path).catch(() => false);
+    if (back) app.message(`brought back ${basename(dirname(path))}/${basename(path)}, cleaned up earlier`);
+    // Read again even when not brought back here: another read may just have.
+    return backend.readBytes(path).catch(() => Promise.reject(err));
+  }
+}
+
+/** ~/.config/md-editor/config.toml, parsed; null when there is none, or when it is broken (said at startup). */
+async function readSettings(): Promise<Record<string, unknown> | null> {
+  const dir = await backend.configDir().catch(() => "");
+  if (!dir) return null;
+  const path = `${dir}/config.toml`;
+  let text: string;
+  try {
+    text = (await backend.readText(path)).text;
+  } catch (err) {
+    if (!/os error 2|not found/i.test(String(err))) startupErrors.push(String(err));
+    return null;
+  }
+  try {
+    return parseToml(text) as Record<string, unknown>;
+  } catch (err) {
+    startupErrors.push(`${path}: ${err instanceof Error ? err.message : err} (:config-open opens it)`);
+    return null;
+  }
+}
 
 function reviewOriginal(state: EditorState): Text | null {
   return reviewing(state) ? originalOf(state) : null;
@@ -1991,7 +2233,7 @@ function reportSkippedKeys(skipped: string[]) {
   } catch {
     // Said every time, then.
   }
-  if (list) app.message(`Helix config: skipped bindings using commands this editor lacks (${list})`);
+  if (list) app.message(`skipped bindings using commands this editor lacks (${list}); :config-open lists them`);
 }
 
 // Exposed for debugging from the devtools console, and for the browser tests.

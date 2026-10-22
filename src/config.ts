@@ -1,6 +1,7 @@
 // Defaults, in the shape of Helix's config.toml. At startup, the settings of
 // ~/.config/helix/config.toml that apply to this editor replace them (see
-// helixConfig.ts), and its key remaps are added to these.
+// helixConfig.ts), then those of ~/.config/md-editor/config.toml (see
+// settings.ts); the key remaps of both are added to these.
 
 import type { KeyTrie } from "./helix/keymap.ts";
 import type { ThemeChoice } from "./theme/appearance.ts";
@@ -27,13 +28,13 @@ export const config = {
   // [editor.auto-save] focus-lost
   autoSaveOnFocusLost: true,
 
+  // [images] folder: where pasted and dropped images go, next to the document
+  imageFolder: "assets",
+
+  // Remaps over the default keymap (src/helix/keymap.ts): none. Yours go in
+  // [keys.normal] and [keys.insert] of either config.toml.
   keys: {
-    insert: {
-      j: { k: "normal_mode" },
-    } as KeyTrie,
-    normal: {
-      ret: "goto_word",
-      // C-g ran :write-all and lazygit in a terminal; there is no terminal here.
-    } as KeyTrie,
+    insert: {} as KeyTrie,
+    normal: {} as KeyTrie,
   },
 };

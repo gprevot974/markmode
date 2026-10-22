@@ -73,6 +73,6 @@ describe("Helix config", () => {
     expect(config.cursorline).toBe(false);
     expect(config.softWrap).toBe(false);
     expect(config.lineNumbers).toBe(false);
-    expect(config.keys.insert.j).toEqual({ k: "normal_mode", j: "normal_mode" });
+    expect(config.keys.insert.j).toEqual({ j: "normal_mode" });
   });
 });

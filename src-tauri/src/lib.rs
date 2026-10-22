@@ -3,6 +3,8 @@
 //! file changes on disk (an LLM or another editor writing to it). All editing
 //! logic lives in the front end.
 
+mod cleaned;
+mod clipboard;
 mod files;
 mod helix;
 mod history;
@@ -61,8 +63,25 @@ async fn read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     std::fs::read(&path).map(tauri::ipc::Response::new).map_err(|e| format!("{path}: {e}"))
 }
 
+/// Writes a file's bytes (an export, a pasted image), atomically. They come as
+/// the request's raw body rather than a JSON array of numbers, which is several
+/// times their size and slow to encode and parse; the path comes in the `path`
+/// header, percent-encoded, as headers hold ASCII only.
 #[tauri::command]
-fn write_bytes(path: String, bytes: Vec<u8>) -> Result<(), String> {
+async fn write_bytes(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let path = request
+        .headers()
+        .get("path")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| percent_encoding::percent_decode_str(v).decode_utf8_lossy().into_owned())
+        .ok_or("write_bytes: no path header")?;
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => std::borrow::Cow::Borrowed(bytes.as_slice()),
+        // Where Tauri falls back from its binary channel, they come as JSON.
+        tauri::ipc::InvokeBody::Json(value) => std::borrow::Cow::Owned(
+            serde_json::from_value::<Vec<u8>>(value.clone()).map_err(|e| format!("{path}: expected the file's bytes ({e})"))?,
+        ),
+    };
     files::write_atomic(Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))
 }
 
@@ -99,6 +118,28 @@ fn config_dir() -> String {
     }
     .to_string_lossy()
     .into_owned()
+}
+
+/// Moves files to the Trash, where they can be put back from; stops at the
+/// first that cannot be moved.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn trash_files(paths: Vec<String>) -> Result<(), String> {
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+    let manager = NSFileManager::defaultManager();
+    for path in paths {
+        let url = NSURL::fileURLWithPath(&NSString::from_str(&path));
+        manager
+            .trashItemAtURL_resultingItemURL_error(&url, None)
+            .map_err(|e| format!("{path}: {}", e.localizedDescription()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn trash_files(_paths: Vec<String>) -> Result<(), String> {
+    Err("moving files to the trash works on macOS only".into())
 }
 
 /// Makes a directory and the ones above it that are missing.
@@ -373,7 +414,12 @@ pub fn run() {
             home_dir,
             config_dir,
             create_dir,
+            trash_files,
+            cleaned::images_set_aside,
+            cleaned::image_bring_back,
             exit_app,
+            clipboard::clipboard_files,
+            clipboard::clipboard_image,
             spell::check_spelling,
             spell::spelling_suggestions,
             spell::learn_word,

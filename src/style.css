@@ -1182,3 +1182,37 @@ body {
 .md-note-source {
   font-style: normal;
 }
+
+/* Files dragged over the window from Finder (src/ui/dropHint.ts). */
+.drop-hint {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px dashed var(--blue);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+}
+.drop-hint-label {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-family: var(--ui-font);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drop-caret {
+  position: fixed;
+  z-index: 51;
+  width: 2px;
+  pointer-events: none;
+  background: var(--blue);
+}

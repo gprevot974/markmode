@@ -34,7 +34,7 @@ pub struct Snapshot {
 }
 
 /// FNV-1a: stable across Rust versions, unlike the standard hasher.
-fn key(path: &str) -> String {
+pub(crate) fn key(path: &str) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;
     for b in path.as_bytes() {
         hash ^= u64::from(*b);

@@ -76,21 +76,71 @@ Roughly in order of value:
 
 ## 5. Distribution
 
+*Partly done: the `.md` file associations and "Open With" work.*
+
 - Sign and notarize the macOS build; automatic updates with
   `tauri-plugin-updater`.
+- Build a `.dmg`: `bundle.targets` is `["app"]` only, and both the download
+  page and a Homebrew cask need a disk image.
 - A Homebrew cask.
-- File associations so "Open With" works, and a CLI launcher (`mde notes.md`)
-  so it fits terminal habits.
-- Spell-check is stubbed on Linux and Windows: use Hunspell there, or ship
-  macOS-only at first and say so.
+- A CLI launcher (`mde notes.md`) so it fits terminal habits.
+- Ship macOS-only at first and say so: spell-check is stubbed on Linux and
+  Windows, and paths and appearance handling are macOS-flavored too (see
+  section 8 for the cross-platform plan).
+- A LICENSE file, and a privacy note: the preview loads remote images, so
+  opening a file can make network requests.
 
 ## 6. Onboarding
 
 Modal editing loses most new users within five minutes.
 
+- A searchable command palette, so features can be found without memorizing
+  keys. It comes first: it gives every typable command a place where people can
+  find it, and the tutor can point to it.
 - A `:tutor` document, as Helix has.
 - A visible hint on first launch ("you're in NOR mode, press `i` to type").
-- A searchable command palette, so features can be found without memorizing
-  keys.
-- A README with a GIF, a license, and a short page explaining what makes the
-  app different.
+- A README with a GIF and a short page explaining what makes the app
+  different.
+
+## 7. Gaps before a first release
+
+*Settings and images done: see "Settings" and "Links, images, footnotes and
+math" in the README. The settings apply over the Helix config rather than
+under it, since they are this editor's own; `read-helix-config = false` turns
+the Helix one off.*
+
+- **Settings users can edit.** Spell-check, theme, `readHelixConfig`, text
+  width and autosave live in `src/config.ts`, so they are fixed at build time.
+  Read them from `~/.config/md-editor/config.toml`, which already holds
+  `[export]`.
+- **Paste and drop images.** Save a pasted or dropped image next to the
+  document (in `assets/`) and insert the link, as Typora and Obsidian do.
+- **Non-markdown files.** Keep the file picker listing every file and opening
+  any text file, as Helix does: users edit `config.toml`, export styles and
+  the odd JSON file here, already highlighted. No form view for the TOML
+  settings; the commented template `:config-open` writes serves this audience
+  better. Still to do: open images and PDFs chosen in the picker with the
+  system's app (`open_external`) instead of refusing them as binary.
+- **Apply settings without a restart**, as Helix's `:config-reload` does. The
+  editor states are built from the settings, so this means rebuilding them
+  while keeping each buffer's text, selection and undo history.
+
+## 8. After the first release
+
+- **Mermaid diagrams.** LLMs write Mermaid all the time, so it fits the
+  pitch.
+  - Preview: render ` ```mermaid ` blocks as an SVG widget, like math, with
+    the source shown while the cursor is inside. Load the library with a
+    dynamic `import()` only when a diagram appears: it is several MB.
+  - HTML export: inline the SVG.
+  - docx export, the hard part: Word needs a raster image (or SVG with a PNG
+    fallback). Render with `htmlLabels: false`, so the SVG can be drawn to a
+    canvas, and embed the PNG.
+- **Spell-check on Linux and Windows.** Keep the macOS checker: it follows the
+  system languages, detects them automatically and shares the words taught in
+  other apps. Add a second backend behind the same three commands:
+  - spellbook, the Helix project's pure-Rust, Hunspell-compatible checker,
+    which avoids building the C Hunspell library (painful on Windows).
+  - On Linux, the dictionaries already installed in `/usr/share/hunspell`.
+  - On Windows, bundled dictionaries (licenses vary by language) or the
+    Windows spell-checking API.

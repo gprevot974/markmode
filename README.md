@@ -68,8 +68,9 @@ node scripts/build-docx.ts input.md [output.docx] [--style name]
 | `:zoom [in\|out\|reset\|percent]` | text size |
 | `:table-widths [widths\|reset]` | set the column widths of the table at the cursor (see [Export](#export)) |
 | `:reflow [width]` | hard-wrap the selected lines, or the paragraph at the cursor, to `text-width` (80) |
+| `:images-clean`, `:images-clean!` | list the images in `assets/` no markdown file uses; move them to the Trash |
 | `:word-count` (`:wc`) | words, characters, footnote words and reading time, of the selection or the document |
-| `:config-open` | open your Helix config.toml |
+| `:config-open`, `:config-open-helix` | open your settings (see [Settings](#settings)), your Helix config.toml |
 | `:export-docx [path]` | export to Word |
 | `:export-style [name\|reset]`, `:export-style-default [name]` | pick the document's export style; the one for documents naming none |
 | `:export-style-new <name> [project]`, `:export-style-open [name]` | start an export style, edit one |
@@ -146,6 +147,30 @@ To find your way in a long file:
 - **Images**: `![description](path)` shows the image in its place, from a
   path relative to the document or a web address. On the cursor's line the
   source shows above it.
+- **Pasting and dropping images**: ⌘V with an image on the clipboard (a
+  screenshot, an image copied in another app) saves it in `assets/` next to
+  the document and links it after the selection (at the cursor in insert
+  mode). Dropping image files from Finder links them where they land: one
+  from the document's folder, or a folder below it, is linked where it is;
+  any other is copied into `assets/`. Pasted images are named by the time
+  (`pasted-2026-10-22-143005.png`) and get an empty description to fill in;
+  dropped ones keep their name, with spaces and the like made dashes and a
+  number added when it is taken. `[images] folder` in your
+  [settings](#settings) changes the folder (`""` for the document's own). The
+  document needs to be saved first, so the image has somewhere to go. Other
+  files dropped on the window open. While files are dragged over the window,
+  a caret shows where the link will go and a label says what dropping does.
+- **Unused images**: an image stays in `assets/` after its link is deleted, as
+  undo, the version history and other documents may still need it.
+  `:images-clean` lists the images in the document's `assets/` that no
+  markdown file in the workspace mentions (open buffers count with their
+  unsaved changes), and `:images-clean!` moves them to the Trash, where they
+  can be put back from; a folder that would be left empty goes as a whole. An
+  image counts as used when its file name appears anywhere in a markdown file,
+  so one is never trashed by mistake; hidden and git-ignored files are not
+  searched. A copy of each is kept for 90 days (in the app's data, next to the
+  version history), and an image comes back to its folder on its own when a
+  link to it does: a version picked in `:history`, an undo, an outside change.
 - **Footnotes**: `[^label]` shows as the note's number (numbered in the order
   they are first referred to) with the note as a tooltip, and the note,
   `[^label]: text`, in smaller type. `gf` goes from one to the other.
@@ -240,10 +265,44 @@ installation's runtime (Homebrew, Linux packages, a source checkout, or
 colors and its `markup.*` scopes color the editor and the preview. The name
 `kanagawa` means the built-in theme, which has a light half that Helix's lacks.
 
+## Settings
+
+Your settings are in `~/.config/md-editor/config.toml`
+(`$XDG_CONFIG_HOME/md-editor` if set). `:config-open` opens it, writing every
+setting, commented out, when there is none yet. It has the shape of Helix's
+config.toml, and applies over it:
+
+```toml
+read-helix-config = true   # read ~/.config/helix/config.toml (below)
+theme = "auto"             # or { light = "...", dark = "..." }, or a Helix theme
+
+[editor]
+spellcheck = true          # underline misspelled words
+cursorline = true
+gutters = []               # ["line-numbers"] for line numbers
+soft-wrap = { enable = true }
+text-width = 80            # where :reflow wraps
+auto-save = { focus-lost = true }
+
+[images]
+folder = "assets"          # where pasted and dropped images go
+
+[keys.normal]              # as in Helix; [keys.insert] too
+ret = "goto_word"          # no remaps by default; this is an example
+
+[export]
+style = "default"          # see :export-style-default
+```
+
+Changes apply on the next start. A file that does not parse is reported at
+startup, and the defaults are used. The project's `.md-editor/config.toml`
+holds only `[export]` (see [Export](#export)).
+
 ## Helix config
 
 At startup, `~/.config/helix/config.toml` is read (`$XDG_CONFIG_HOME/helix`
-if set) and applied over the defaults in `src/config.ts`:
+if set) and applied over the defaults in `src/config.ts`, and your
+[settings](#settings) over it:
 
 - `theme`, including `theme = { light = "...", dark = "..." }`, which follows
   the macOS appearance. A theme picked with `:theme` wins over it.
@@ -253,9 +312,10 @@ if set) and applied over the defaults in `src/config.ts`:
   editor lacks is skipped whole (a sequence run halfway would do something
   else), and a message lists the skipped ones the first time, and again when
   the list changes. `[keys.select]` is ignored: select mode shares the normal
-  mode bindings. `:config-open` opens config.toml and lists them again.
+  mode bindings. `:config-open` lists them again; `:config-open-helix` opens
+  the Helix config.toml.
 
-Set `readHelixConfig: false` in `src/config.ts` to ignore it.
+Set `read-helix-config = false` in your settings to ignore it.
 
 ## Files
 
@@ -283,7 +343,7 @@ words you taught it in other apps. Code, URLs and comments are skipped, and so
 is the word you're typing. `]s` / `[s` jump to the next / previous misspelling;
 `space a` lists suggestions at the cursor (a number picks one, `a` adds the word
 to the dictionary, `i` ignores it until the app quits). Turn it off with
-`spellcheck` in `src/config.ts`.
+`spellcheck = false` under `[editor]` in your [settings](#settings).
 
 ## Buffers and windows
 
@@ -312,14 +372,14 @@ what is inside it, Enter on a file runs the command. `/`, `?`, `s` and `S`
 preview their result as you type, and Esc restores the selection.
 
 Insert mode keeps CodeMirror's editing (with the macOS Emacs keys) and adds
-`C-w`, `C-u` and `jk`, and `C-x`, which completes link targets after `[[` and
+`C-w` and `C-u`, and `C-x`, which completes link targets after `[[` and
 `](`, and keys and values in front matter and export styles (in normal mode
 too, where Helix has decrement, which this editor lacks). Pressing Enter in a list continues it.
 
 Files other than markdown (an export style, config.toml) open as plain text,
 highlighted, without the preview.
 
-Change bindings in your Helix config.toml, or in `src/config.ts`. It uses config.toml's shape and Helix's
+Change bindings in your [settings](#settings) or your Helix config.toml. They use Helix's
 command names; see `src/helix/keymap.ts` for the defaults and `src/helix/commands.ts`
 for every command.
 
@@ -503,6 +563,7 @@ src/outline.ts    headings, for the heading pickers
 src/search.ts     space /: global search (the files on disk are searched by src-tauri/src/search.rs)
 src/links.ts      following links and wiki-links (gf)
 src/images.ts     images: paths, loading, sizes
+src/imageInput.ts pasting and dropping images: file names and links
 src/jumplist.ts   the jumplist (C-o, C-i)
 src/reflow.ts     :reflow
 src/wordCount.ts  word counts: the text a reader sees
@@ -512,6 +573,7 @@ src/preview/      live preview decorations, table rendering, and the syntax adde
                   front matter, wiki-links, footnotes, math (math.ts, with KaTeX)
 src/export/       markdown → docx and → html, export styles (style.ts: every key), their files and reference
 src/theme/        Kanagawa, Helix themes, light and dark
+src/settings.ts   your settings: ~/.config/md-editor/config.toml, and its template
 src/helixConfig.ts  reading ~/.config/helix/config.toml
 src/fileformat.ts line endings and encodings
 src/backend.ts    files, dialogs, clipboard (Tauri, or an in-memory stand-in in a browser)
