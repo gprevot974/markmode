@@ -43,6 +43,7 @@ export const typables: Typable[] = [
   { name: "line-ending", aliases: [], doc: "Set the line endings the file is saved with: lf or crlf. Without an argument, shows them", args: "line-ending" },
   { name: "config-open", aliases: [], doc: "Open your settings, ~/.config/markmode/config.toml (written with every setting commented out when there is none), and list the bindings this editor skips" },
   { name: "config-open-helix", aliases: [], doc: "Open your Helix config.toml, which applies under your settings" },
+  { name: "config-reload", aliases: [], doc: "Apply your settings and Helix config.toml again, without a restart" },
   { name: "theme", aliases: [], doc: "Change the theme: auto (Kanagawa, following macOS), light, dark, or any Helix theme by name. Without an argument, shows the current one", args: "theme" },
   { name: "history", aliases: [], doc: "Pick an earlier version of the file, kept on each open, save and outside change, to bring back" },
   { name: "reset-diff-change", aliases: ["diffget", "diffg"], doc: "Reject the outside changes under the selections, bringing back the text from before" },

@@ -105,11 +105,26 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   await type("gn");
   check("gn cycles buffers", (await files())[0] === "/sample.md");
 
+  // Markdown previews are rendered, the highlighted line too.
+  await type(" s");
+  await page.waitForTimeout(200);
+  const symbols = await ev(() => ({
+    editor: !!document.querySelector(".pk-preview .cm-editor"),
+    current: document.querySelector(".pk-preview .pk-current")?.textContent,
+  }));
+  check("symbol picker preview is rendered, # hidden", symbols.editor && symbols.current === "Markmode Sample", symbols);
+  await press("Escape");
+
   // File picker
   await type(" f");
   await page.waitForTimeout(200);
   const listed = await ev(() => [...document.querySelectorAll(".pk-row")].map((r) => r.textContent));
   check("file picker lists files", listed.includes("sample.md") && listed.includes("notes/ideas.md"), listed);
+  await type("chart");
+  await page.waitForTimeout(300);
+  const highlighted = await ev(() => document.querySelectorAll(".pk-preview .cm-line span[class]").length);
+  check("other files preview highlighted, as opened", highlighted > 0, highlighted);
+  await page.fill(".pk-input", "");
   await type("nid");
   const filtered = await ev(() => ({
     rows: [...document.querySelectorAll(".pk-row")].map((r) => r.innerHTML),

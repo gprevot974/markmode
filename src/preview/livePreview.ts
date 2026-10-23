@@ -2,7 +2,7 @@
 // hidden, except on lines that hold a selection, which show their raw source
 // so every character stays reachable by Helix motions.
 
-import { type EditorState, type Range as DecoRange, RangeSet, StateEffect, StateField, type Text } from "@codemirror/state";
+import { type EditorState, type Range as DecoRange, Facet, RangeSet, StateEffect, StateField, type Text } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import {
@@ -22,6 +22,9 @@ import { documentPath, imageUrl } from "../images.ts";
 import { footnoteLabel, footnoteNumbers } from "./footnoteSyntax.ts";
 import { MathWidget, mathBlocks, texOf } from "./math.ts";
 
+/** Every line rendered, the selection's too: a document only read, as a picker's preview. */
+export const renderAll = Facet.define<boolean, boolean>({ combine: (values) => values.some(Boolean) });
+
 /**
  * One-based numbers of lines touched by a selection. A range's end is
  * exclusive: the cursor on an empty line covers its line break, which ends at
@@ -29,6 +32,7 @@ import { MathWidget, mathBlocks, texOf } from "./math.ts";
  */
 export function activeLines(state: EditorState): Set<number> {
   const lines = new Set<number>();
+  if (state.facet(renderAll)) return lines;
   for (const r of state.selection.ranges) {
     const first = state.doc.lineAt(r.from).number;
     const last = state.doc.lineAt(r.to > r.from ? r.to - 1 : r.to).number;

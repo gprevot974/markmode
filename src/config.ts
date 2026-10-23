@@ -39,3 +39,10 @@ export const config = {
     normal: {} as KeyTrie,
   },
 };
+
+const defaults = structuredClone(config);
+
+/** Back to the defaults, for the config files to apply again (`:config-reload`). */
+export function resetConfig() {
+  Object.assign(config, structuredClone(defaults));
+}

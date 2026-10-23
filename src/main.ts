@@ -1,12 +1,9 @@
-import { EditorSelection, EditorState, type Extension, Prec, type StateEffect, Text, Transaction } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, type Extension, Prec, type StateEffect, Text, Transaction } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { languages } from "@codemirror/language-data";
-import { LanguageDescription, type LanguageSupport } from "@codemirror/language";
 
 import { parse as parseToml } from "smol-toml";
-import { config } from "./config.ts";
+import { config, resetConfig } from "./config.ts";
 import { backend, type DragDrop, isTauri } from "./backend.ts";
 import { helixState, modeField, nextBoundaryIn, setMode, type Mode } from "./helix/state.ts";
 import { helixKeys } from "./helix/dispatcher.ts";
@@ -16,10 +13,7 @@ import { cursorLines } from "./helix/cursorline.ts";
 import { jumpLabels } from "./helix/jumplabels.ts";
 import { commands, pasteText, setSearchPattern, type Host, type WindowCommand } from "./helix/commands.ts";
 import { livePreview, setTableWidths, setTotalRows, tableWidths } from "./preview/livePreview.ts";
-import { frontMatterSyntax } from "./preview/frontMatterSyntax.ts";
-import { wikiLinkSyntax } from "./preview/wikiLinkSyntax.ts";
-import { footnoteSyntax } from "./preview/footnoteSyntax.ts";
-import { mathSyntax } from "./preview/math.ts";
+import { isMarkdownPath, loadLanguage, plainLanguage, proseLanguage } from "./languages.ts";
 import { anchorLine, linkAt, MARKDOWN_PATH, resolveWiki } from "./links.ts";
 import { documentPath, loadImages, rasterizeSvgs, setImageReader } from "./images.ts";
 import { applyExportLook } from "./preview/exportLook.ts";
@@ -41,7 +35,7 @@ import { MAX_MATCHES, searchRegex, searchText, type SearchMatch } from "./search
 import { clampSelection, type Jump, JumpList } from "./jumplist.ts";
 import type { Snapshot, SnapshotKind } from "./backend.ts";
 import { kanagawa } from "./theme/kanagawa.ts";
-import { currentTheme, endThemePreview, initTheme, previewTheme, setTheme, themeNames } from "./theme/appearance.ts";
+import { currentTheme, endThemePreview, initTheme, previewTheme, reloadTheme, setTheme, themeNames } from "./theme/appearance.ts";
 import { applyHelixConfig } from "./helixConfig.ts";
 import { applySettings, readsHelixConfig, SETTINGS_TEMPLATE } from "./settings.ts";
 import { altText, freeName, imageFiles, imageLink, type ImageSource, inside, isImageName, pastedName, unusedImages } from "./imageInput.ts";
@@ -66,6 +60,8 @@ import {
 } from "./fileformat.ts";
 
 const $ = (id: string) => document.getElementById(id)!;
+/** The parts of an editor state built from the settings, which `:config-reload` rebuilds in place. */
+const settingsSlots = { view: new Compartment(), spelling: new Compartment(), keys: new Compartment() };
 const basename = (p: string) => p.split("/").pop() ?? p;
 const dirname = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
 /** `to` from the folder `from`, both absolute: `../notes/a.md`. */
@@ -86,11 +82,6 @@ function diffChange(a: string, b: string) {
   return { from: start, to: a.length - end, insert: b.slice(start, b.length - end) };
 }
 
-/** Files edited as markdown, with the live preview; others (a style's TOML) are plain text. */
-const isMarkdownPath = (path: string | null) => !path || /\.(?:md|markdown|mdown|mkd)$/i.test(path);
-
-/** Highlighting for the other files, by language name, loaded when such a file is opened. */
-const plainLanguages = new Map<string, LanguageSupport>();
 /** Files a link opens in their own app rather than here. */
 const EXTERNAL = /\.(?:png|jpe?g|gif|webp|svg|bmp|tiff?|heic|ico|pdf|docx?|xlsx?|pptx?|odt|ods|odp|key|pages|numbers|zip|gz|mp[34]|mov|m4a|wav|webm|html?)$/i;
 
@@ -141,13 +132,6 @@ const imageInput = (host: ImageHost) =>
       },
     }),
   );
-
-const languageOf = (path: string) => LanguageDescription.matchFilename(languages, basename(path));
-
-async function loadLanguage(path: string) {
-  const found = languageOf(path);
-  if (found && !plainLanguages.has(found.name)) plainLanguages.set(found.name, await found.load().catch(() => []) as LanguageSupport);
-}
 
 /** At most this many files are read for the headings picker across files (`space S`). */
 const MAX_HEADING_FILES = 2000;
@@ -284,37 +268,21 @@ class App implements Host {
   /** A new editor state; `original` is the text from before the outside changes under review. */
   private createState(doc: string | Text, path: string | null, selection?: EditorSelection, original: Text | null = null): EditorState {
     const prose = isMarkdownPath(path);
-    const plain = prose ? null : plainLanguages.get(languageOf(path!)?.name ?? "");
+    const plain = prose ? null : plainLanguage(path!);
     const extensions: Extension[] = [
       helixState,
       history({ newGroupDelay: 10 * 60_000 }),
       drawSelection(),
       EditorState.allowMultipleSelections.of(true),
-      config.lineNumbers ? lineNumbers() : [],
-      cursorLines(config.cursorline),
-      config.softWrap ? EditorView.lineWrapping : [],
-      prose ? [markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [frontMatterSyntax, wikiLinkSyntax, footnoteSyntax, mathSyntax] }), livePreview, followOnClick(this), imageInput(this), documentPath.of(path)] : (plain ?? []),
+      settingsSlots.view.of(this.viewSettings()),
+      prose ? [proseLanguage, livePreview, followOnClick(this), imageInput(this), documentPath.of(path)] : (plain ?? []),
       comments,
       reviewSlot(original),
-      config.spellcheck && prose
-        ? spellcheck({
-            check: (text) => backend.checkSpelling(text),
-            suggest: (word) => backend.spellingSuggestions(word),
-            learn: (word) => backend.learnWord(word),
-          })
-        : [],
+      settingsSlots.spelling.of(this.spelling(prose)),
       selectionDecorations,
       jumpLabels,
       kanagawa,
-      helixKeys(
-        this,
-        {
-          normal: mergeKeys(normalKeys, config.keys.normal),
-          insert: mergeKeys(insertKeys, config.keys.insert),
-        },
-        (keys) => ($("pending").textContent = keys),
-        renderInfobox,
-      ),
+      settingsSlots.keys.of(this.keys()),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.contentAttributes.of({ spellcheck: "false", autocorrect: "off", autocapitalize: "off" }),
       EditorView.updateListener.of((u) => this.onUpdate(u)),
@@ -323,6 +291,54 @@ class App implements Host {
     // Start on the first character, like Helix, rather than an empty cursor.
     selection ??= text.length ? EditorSelection.single(0, nextBoundaryIn(text, 0)) : undefined;
     return EditorState.create({ doc: text, extensions, selection });
+  }
+
+  private viewSettings(): Extension {
+    return [config.lineNumbers ? lineNumbers() : [], cursorLines(config.cursorline), config.softWrap ? EditorView.lineWrapping : []];
+  }
+
+  private spelling(prose: boolean): Extension {
+    if (!config.spellcheck || !prose) return [];
+    return spellcheck({
+      check: (text) => backend.checkSpelling(text),
+      suggest: (word) => backend.spellingSuggestions(word),
+      learn: (word) => backend.learnWord(word),
+    });
+  }
+
+  private keys(): Extension {
+    return helixKeys(
+      this,
+      {
+        normal: mergeKeys(normalKeys, config.keys.normal),
+        insert: mergeKeys(insertKeys, config.keys.insert),
+      },
+      (keys) => ($("pending").textContent = keys),
+      renderInfobox,
+    );
+  }
+
+  /**
+   * `:config-reload`: reads the settings and the Helix config again and
+   * rebuilds what depends on them in every state, which keeps each buffer's
+   * text, selections, undo history and review.
+   */
+  private async reloadConfig() {
+    resetConfig();
+    const { errors, skipped } = await loadSettings();
+    skippedKeys = skipped;
+    const themeError = await reloadTheme(config.theme);
+    if (themeError) errors.push(themeError);
+    document.body.classList.toggle("cursorline", config.cursorline);
+    const reconfigure = (path: string | null) => [
+      settingsSlots.view.reconfigure(this.viewSettings()),
+      settingsSlots.spelling.reconfigure(this.spelling(isMarkdownPath(path))),
+      settingsSlots.keys.reconfigure(this.keys()),
+    ];
+    for (const doc of this.docs) doc.state = doc.state.update({ effects: reconfigure(doc.path) }).state;
+    for (const win of this.layout.windows()) win.view.dispatch({ effects: reconfigure(win.doc.path) });
+    if (errors.length) return this.message(errors.join("; "), "error");
+    this.message(skipped.length ? `config reloaded; skipped bindings using commands this editor lacks: ${skipped.join("; ")}` : "config reloaded");
   }
 
   // ── Documents ──────────────────────────────────────────────────────────────
@@ -396,6 +412,11 @@ class App implements Host {
         const disk = await backend.readText(path);
         file = fromDisk(disk.text, disk.format);
       } catch (err) {
+        // An image, a PDF or the like: the system's app shows it.
+        if (/binary file/.test(String(err))) {
+          await backend.openExternal(path);
+          return this.message(`${basename(path)} is not text: opened in its app`);
+        }
         exists = false;
         // A path that does not exist yet becomes a new file on the first write.
         if (!/os error 2|not found/i.test(String(err))) throw err;
@@ -934,9 +955,9 @@ class App implements Host {
         text: (rel) => rel,
         async preview(rel) {
           try {
-            return { text: (await backend.readText(join(rel))).text };
+            return { text: (await backend.readText(join(rel))).text, path: join(rel) };
           } catch (err) {
-            return { text: String(err) };
+            return { text: /binary file/.test(String(err)) ? "Not text: Enter opens it in its app." : String(err) };
           }
         },
         onSelect: (rel, how) => void this.openPath(join(rel), how).catch((e) => this.message(String(e), "error")),
@@ -956,7 +977,7 @@ class App implements Host {
           const state = this.stateOf(doc);
           const main = state.selection.main;
           const cursor = main.head > main.anchor ? main.head - 1 : main.head;
-          return { text: state.doc.toString(), line: state.doc.lineAt(cursor).number };
+          return { text: state.doc.toString(), line: state.doc.lineAt(cursor).number, path: doc.path };
         },
         onSelect: (doc, how) => {
           if (!this.docs.includes(doc)) return;
@@ -1069,15 +1090,17 @@ class App implements Host {
           return this.message(
             skippedKeys.length
               ? `skipped bindings, using commands this editor lacks: ${skippedKeys.join("; ")}`
-              : "changes apply on the next start",
+              : ":config-reload applies changes",
           );
         }
         case "config-open-helix": {
           const path = await backend.helixConfigPath();
           if (!path) return this.message("no Helix config here", "error");
           await this.openPath(path);
-          return this.message(config.readHelixConfig ? "changes apply on the next start" : "not read: read-helix-config = false in your settings");
+          return this.message(config.readHelixConfig ? ":config-reload applies changes" : "not read: read-helix-config = false in your settings");
         }
+        case "config-reload":
+          return await this.reloadConfig();
         case "zoom": {
           if (!arg) return this.message(`zoom ${Math.round(zoomLevel() * 100)}%`);
           const percent = Number(arg.replace(/%$/, ""));
@@ -1544,7 +1567,7 @@ class App implements Host {
           items: headings(text),
           text: (h) => h.title,
           tree: { depth: (h) => h.path.length - 1, parent: (h) => h.parent },
-          preview: (h) => ({ text, line: h.line }),
+          preview: (h) => ({ text, line: h.line, path: doc.path }),
           onSelect: (h, how) => this.gotoHeading(doc, h.line, how),
         },
         () => this.view.focus(),
@@ -1592,7 +1615,7 @@ class App implements Host {
           parent: (e) => (e.heading ? (e.heading.parent ? entries.get(e.heading.parent)! : e.file) : null),
         },
         rowClass: (e) => (e.heading ? "" : "pk-group"),
-        preview: (e) => ({ text: e.text, line: e.heading?.line ?? 1 }),
+        preview: (e) => ({ text: e.text, line: e.heading?.line ?? 1, path: e.path }),
         onSelect: (e, how) => {
           const line = e.heading?.line ?? 1;
           const open = this.docs.find((d) => d.path === e.path);
@@ -1705,10 +1728,10 @@ class App implements Host {
         prefix: (m) => `${m.path}:${m.line}`,
         preview: async (m) => {
           const open = this.docs.find((d) => d.path === dir + m.path);
-          if (open) return { text: this.stateOf(open).doc.toString(), line: m.line };
+          if (open) return { text: this.stateOf(open).doc.toString(), line: m.line, path: open.path };
           try {
             const disk = await backend.readText(dir + m.path);
-            return { text: fromDisk(disk.text, disk.format).text, line: m.line };
+            return { text: fromDisk(disk.text, disk.format).text, line: m.line, path: dir + m.path };
           } catch (err) {
             return { text: String(err) };
           }
@@ -2111,7 +2134,7 @@ class App implements Host {
           const line = lineOf(j);
           return `${this.docName(j.doc)}:${line.number}  ${line.text.trim().slice(0, 100)}`;
         },
-        preview: (j) => ({ text: this.stateOf(j.doc).doc.toString(), line: lineOf(j).number }),
+        preview: (j) => ({ text: this.stateOf(j.doc).doc.toString(), line: lineOf(j).number, path: j.doc.path }),
         onSelect: (j, how) => {
           this.pushJump(this.view, this.view.state.selection);
           const target = how === "replace" ? this.active : this.split(how === "vsplit" ? "row" : "column");
@@ -2192,20 +2215,10 @@ class App implements Host {
   }
 }
 
-// The settings come first: the theme and the keymaps depend on them. Yours
-// apply over the Helix config, which they can also turn off.
-const startupErrors: string[] = [];
-let skippedKeys: string[] = [];
-const settings = await readSettings();
-if (readsHelixConfig(settings)) {
-  try {
-    const toml = await backend.helixConfig();
-    if (toml) skippedKeys = applyHelixConfig(toml);
-  } catch (err) {
-    startupErrors.push(`Helix config: ${err}`);
-  }
-}
-if (settings) skippedKeys.push(...applySettings(settings));
+// The settings come first: the theme and the keymaps depend on them.
+const loaded = await loadSettings();
+const startupErrors = loaded.errors;
+let skippedKeys = loaded.skipped;
 const themeError = await initTheme(config.theme);
 if (themeError) startupErrors.push(themeError);
 initZoom();
@@ -2232,8 +2245,28 @@ async function readImage(path: string): Promise<Uint8Array> {
   }
 }
 
-/** ~/.config/markmode/config.toml, parsed; null when there is none, or when it is broken (said at startup). */
-async function readSettings(): Promise<Record<string, unknown> | null> {
+/**
+ * Applies the Helix config, then your settings over it (they can also turn it
+ * off); returns what went wrong and the bindings skipped.
+ */
+async function loadSettings(): Promise<{ errors: string[]; skipped: string[] }> {
+  const errors: string[] = [];
+  let skipped: string[] = [];
+  const settings = await readSettings(errors);
+  if (readsHelixConfig(settings)) {
+    try {
+      const toml = await backend.helixConfig();
+      if (toml) skipped = applyHelixConfig(toml);
+    } catch (err) {
+      errors.push(`Helix config: ${err}`);
+    }
+  }
+  if (settings) skipped.push(...applySettings(settings));
+  return { errors, skipped };
+}
+
+/** ~/.config/markmode/config.toml, parsed; null when there is none, or when it is broken (said in `errors`). */
+async function readSettings(errors: string[]): Promise<Record<string, unknown> | null> {
   const dir = await backend.configDir().catch(() => "");
   if (!dir) return null;
   const path = `${dir}/config.toml`;
@@ -2241,13 +2274,13 @@ async function readSettings(): Promise<Record<string, unknown> | null> {
   try {
     text = (await backend.readText(path)).text;
   } catch (err) {
-    if (!/os error 2|not found/i.test(String(err))) startupErrors.push(String(err));
+    if (!/os error 2|not found/i.test(String(err))) errors.push(String(err));
     return null;
   }
   try {
     return parseToml(text) as Record<string, unknown>;
   } catch (err) {
-    startupErrors.push(`${path}: ${err instanceof Error ? err.message : err} (:config-open opens it)`);
+    errors.push(`${path}: ${err instanceof Error ? err.message : err} (:config-open opens it)`);
     return null;
   }
 }

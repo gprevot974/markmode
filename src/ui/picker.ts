@@ -1,7 +1,15 @@
 // Helix's picker: a fuzzy-filtered list with a preview beside it. Enter opens
 // the selected item, C-s in a horizontal split, C-v in a vertical one.
+// A file's preview looks as the editor shows it: markdown rendered by the
+// live preview, other files highlighted by their language.
 
+import { EditorState, Text } from "@codemirror/state";
+import { Decoration, EditorView } from "@codemirror/view";
 import { fuzzyMatch } from "./fuzzy.ts";
+import { livePreview, renderAll } from "../preview/livePreview.ts";
+import { isMarkdownPath, loadLanguage, plainLanguage, proseLanguage } from "../languages.ts";
+import { documentPath } from "../images.ts";
+import { kanagawa } from "../theme/kanagawa.ts";
 
 export type OpenHow = "replace" | "hsplit" | "vsplit";
 
@@ -11,6 +19,8 @@ export interface Preview {
   line?: number;
   /** A class for each line, by index (a diff's added and removed lines). */
   classes?: string[];
+  /** The file's path (null for a scratch buffer), when `text` is a file's: it is shown as the editor shows it. */
+  path?: string | null;
 }
 
 export interface PickerOptions<T> {
@@ -55,6 +65,25 @@ export interface PickerOptions<T> {
 
 const PREVIEW_LINES = 1000;
 
+/** A file's preview as a read-only editor (markdown with every line rendered), the cursor on `line`, highlighted. */
+function fileState(preview: Preview): EditorState {
+  const path = preview.path ?? null;
+  const doc = Text.of(preview.text.split("\n"));
+  const at = preview.line ? doc.line(Math.max(1, Math.min(preview.line, doc.lines))).from : 0;
+  return EditorState.create({
+    doc,
+    selection: { anchor: at },
+    extensions: [
+      isMarkdownPath(path) ? [proseLanguage, livePreview, renderAll.of(true), documentPath.of(path)] : (plainLanguage(path!) ?? []),
+      kanagawa,
+      EditorView.lineWrapping,
+      EditorView.editable.of(false),
+      EditorState.readOnly.of(true),
+      preview.line ? EditorView.decorations.of(Decoration.set(Decoration.line({ class: "pk-current" }).range(at))) : [],
+    ],
+  });
+}
+
 interface Row<T> {
   item: T;
   text: string;
@@ -94,6 +123,8 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   let previewGen = 0;
   let current: T | null | undefined;
   const previewCache = new Map<T, Preview | null>();
+  const fileStates = new WeakMap<Preview, EditorState>();
+  let fileView: EditorView | null = null;
 
   const rowHeight = () => (list.firstElementChild as HTMLElement | null)?.offsetHeight || 22;
   const pageSize = () => Math.max(1, Math.floor(list.clientHeight / rowHeight()));
@@ -239,6 +270,14 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
       previewCache.set(row.item, preview);
     }
     if (gen !== previewGen) return;
+    if (preview && preview.path !== undefined && !preview.classes) {
+      if (!isMarkdownPath(preview.path)) await loadLanguage(preview.path!);
+      if (gen === previewGen) showFile(preview);
+      return;
+    }
+    fileView?.destroy();
+    fileView = null;
+    previewBox.classList.remove("pk-file");
     if (!preview) return previewBox.replaceChildren();
     const lines = preview.text.split("\n");
     const focus = preview.line ?? 1;
@@ -255,6 +294,19 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
     previewBox.querySelector(".current")?.scrollIntoView({ block: "center" });
   }
 
+  function showFile(preview: Preview) {
+    let state = fileStates.get(preview);
+    if (!state) fileStates.set(preview, (state = fileState(preview)));
+    if (fileView) fileView.setState(state);
+    else {
+      previewBox.replaceChildren();
+      previewBox.classList.add("pk-file");
+      fileView = new EditorView({ state, parent: previewBox });
+    }
+    const at = preview.line ? state.selection.main.head : 0;
+    fileView.dispatch({ effects: EditorView.scrollIntoView(at, { y: preview.line ? "center" : "start" }) });
+  }
+
   function move(delta: number) {
     if (!rows.length) return;
     selected = Math.max(0, Math.min(rows.length - 1, selected + delta));
@@ -263,6 +315,7 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
 
   function close() {
     input.onblur = null;
+    fileView?.destroy();
     root.remove();
     window.removeEventListener("resize", render);
     refocus();

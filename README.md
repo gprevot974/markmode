@@ -71,6 +71,7 @@ node scripts/build-docx.ts input.md [output.docx] [--style name]
 | `:images-clean`, `:images-clean!` | list the images in `assets/` no markdown file uses; move them to the Trash |
 | `:word-count` (`:wc`) | words, characters, footnote words and reading time, of the selection or the document |
 | `:config-open`, `:config-open-helix` | open your settings (see [Settings](#settings)), your Helix config.toml |
+| `:config-reload` | apply both again, without a restart |
 | `:export-docx [path]` | export to Word |
 | `:export-style [name\|reset]`, `:export-style-default [name]` | pick the document's export style; the one for documents naming none |
 | `:export-style-new <name> [project]`, `:export-style-open [name]` | start an export style, edit one |
@@ -301,14 +302,15 @@ ret = "goto_word"          # no remaps by default; this is an example
 style = "default"          # see :export-style-default
 ```
 
-Changes apply on the next start. A file that does not parse is reported at
-startup, and the defaults are used. The project's `.markmode/config.toml`
+`:config-reload` applies changes to every open buffer, keeping its text,
+selections and undo history; so does a restart. A file that does not parse is
+reported, and the defaults are used. The project's `.markmode/config.toml`
 holds only `[export]` (see [Export](#export)).
 
 ## Helix config
 
-At startup, `~/.config/helix/config.toml` is read (`$XDG_CONFIG_HOME/helix`
-if set) and applied over the defaults in `src/config.ts`, and your
+At startup and on `:config-reload`, `~/.config/helix/config.toml` is read
+(`$XDG_CONFIG_HOME/helix` if set) and applied over the defaults in `src/config.ts`, and your
 [settings](#settings) over it:
 
 - `theme`, including `theme = { light = "...", dark = "..." }`, which follows
@@ -332,7 +334,8 @@ Set `read-helix-config = false` in your settings to ignore it.
   permissions are kept.
 - **Encodings and line endings.** UTF-8 (with or without BOM), UTF-16 with a
   BOM, and anything else as Windows-1252 are read and written back the same
-  way; files containing NUL bytes are refused as binary. `\r\n` files keep
+  way; a file containing NUL bytes (an image, a PDF) opens in the system's app
+instead. `\r\n` files keep
   `\r\n`; a file mixing both gets the more common one. The statusline shows
   the encoding and line endings when they are not UTF-8 and `\n`.
   `:encoding` and `:line-ending` change them.
@@ -360,7 +363,9 @@ picker. The workspace is the nearest folder at or above the current file that
 holds `.git` or `.helix`, or else the file's own folder; with no file open, the
 folder the app was started in, or your home folder when started from the Finder.
 `space S` and `space /` search the same place, which their title shows. In a picker, type to fuzzy-filter, Enter opens, `C-s` / `C-v` open in a
-horizontal / vertical split. `ga` goes back to the last buffer, `gn` / `gp`
+horizontal / vertical split. The preview shows a file as the editor would:
+markdown rendered, other text files highlighted by their language. Files that
+are not text open in the system's app. `ga` goes back to the last buffer, `gn` / `gp`
 cycle through them.
 
 `space w` or `C-w` is window mode: `v` / `s` split, `w` next window, `h j k l`

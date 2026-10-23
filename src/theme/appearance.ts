@@ -90,10 +90,15 @@ async function apply() {
 
 /** Applies the remembered theme, else `fallback`; returns an error to show, if any. */
 export async function initTheme(fallback: ThemeChoice): Promise<string | null> {
+  systemLight.addEventListener("change", () => void apply().catch(() => {}));
+  return reloadTheme(fallback);
+}
+
+/** As `initTheme`, for settings read again: the theme they name, unless one was chosen with `:theme`. */
+export async function reloadTheme(fallback: ThemeChoice): Promise<string | null> {
   let stored: string | null = null;
   storage((s) => (stored = s.getItem(KEY)));
   choice = stored ?? fallback;
-  systemLight.addEventListener("change", () => void apply().catch(() => {}));
   try {
     await apply();
     return null;

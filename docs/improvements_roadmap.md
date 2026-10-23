@@ -104,10 +104,13 @@ Modal editing loses most new users within five minutes.
 
 ## 7. Gaps before a first release
 
-*Settings and images done: see "Settings" and "Links, images, footnotes and
-math" in the README. The settings apply over the Helix config rather than
-under it, since they are this editor's own; `read-helix-config = false` turns
-the Helix one off.*
+*Done: see "Settings", "Files", "Buffers and windows" and "Links, images,
+footnotes and math" in the README. The settings apply over the Helix config
+rather than under it, since they are this editor's own;
+`read-helix-config = false` turns the Helix one off. `:config-reload`
+reconfigures the settings' parts of each editor state (CodeMirror
+compartments) rather than rebuilding the states, so nothing else in them is
+lost.*
 
 - **Settings users can edit.** Spell-check, theme, `readHelixConfig`, text
   width and autosave live in `src/config.ts`, so they are fixed at build time.
@@ -119,8 +122,8 @@ the Helix one off.*
   any text file, as Helix does: users edit `config.toml`, export styles and
   the odd JSON file here, already highlighted. No form view for the TOML
   settings; the commented template `:config-open` writes serves this audience
-  better. Still to do: open images and PDFs chosen in the picker with the
-  system's app (`open_external`) instead of refusing them as binary.
+  better. Images and PDFs chosen in the picker open with the system's app
+  (`open_external`) instead of being refused as binary.
 - **Apply settings without a restart**, as Helix's `:config-reload` does. The
   editor states are built from the settings, so this means rebuilding them
   while keeping each buffer's text, selection and undo history.

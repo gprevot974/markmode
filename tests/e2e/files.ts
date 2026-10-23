@@ -59,6 +59,37 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   const template = await disk("/config/markmode/config.toml");
   check(":config-open writes a commented settings file", template.includes("[images]") && template.includes("# spellcheck = true"), template);
 
+  // :config-reload applies edited settings to the open buffers, which keep
+  // their text and undo history.
+  await run("o /windows.md");
+  await type("ggiReloaded ");
+  await press("Escape");
+  await ev(() => backend.writeText("/config/markmode/config.toml", '[editor]\ngutters = ["line-numbers"]\ncursorline = false\n\n[keys.normal]\nQ = "goto_last_line"\n'));
+  await run("config-reload");
+  const reloaded = await ev(() => ({
+    numbers: !!app.view.dom.querySelector(".cm-lineNumbers"),
+    cursorline: document.body.classList.contains("cursorline"),
+    message: document.getElementById("message")!.textContent,
+  }));
+  check(":config-reload applies the settings", reloaded.numbers && !reloaded.cursorline && reloaded.message === "config reloaded", reloaded);
+  await type("Q");
+  const line = await ev(() => app.view.state.doc.lineAt(app.view.state.selection.main.head).number as number);
+  check("and their key remaps", line === (await ev(() => app.view.state.doc.lines as number)), line);
+  await type("u");
+  check("keeping the undo history", !(await ev(() => app.view.state.doc.toString() as string)).includes("Reloaded"));
+  await ev(() => backend.writeText("/config/markmode/config.toml", ""));
+  await run("config-reload");
+  check("back to the defaults once removed", !(await ev(() => !!app.view.dom.querySelector(".cm-lineNumbers"))));
+
+  // A file that is not text opens in the system's app.
+  await ev(() => backend.writeText("/photo.png", "\x89PNG\0\0"));
+  await run("o /photo.png");
+  const external = await ev(() => ({
+    opened: (window as unknown as { openedExternally?: string[] }).openedExternally ?? [],
+    docs: app.docs.map((d: { path: string | null }) => d.path),
+  }));
+  check("a binary file opens in its app, not as a buffer", external.opened.includes("/photo.png") && !external.docs.includes("/photo.png"), external);
+
   // Settings apply at the next start: here, where pasted images go.
   await ev(() => backend.writeText("/config/markmode/config.toml", '[images]\nfolder = "pics"\n'));
   await restart();

@@ -179,6 +179,15 @@ body {
   display: none;
 }
 
+/* CodeMirror hides the browser's selection on lines only. WebKit also paints
+   it on block widgets (review chunks, math, images) and the gaps around them
+   when the selection reaches across, so hide it there too. */
+.cm-content::selection,
+.cm-content > :not(.cm-line)::selection,
+.cm-content > :not(.cm-line) ::selection {
+  background: transparent;
+}
+
 /* Insert mode only ever has cursors, but keep the layer readable anyway. */
 .cm-editor .cm-selectionLayer .cm-selectionBackground {
   background: var(--sel-primary) !important;
@@ -411,17 +420,10 @@ body {
   padding: 0.3em 0;
   overflow-x: auto;
 }
-/* Typeset math and images are not text: the browser's selection, which
-   reaches across them next to the cursor, does not paint them (as for review chunks). */
+/* Typeset math and images are not text: the browser's selection does not reach into them. */
 .md-math,
 .md-image {
   user-select: none;
-}
-.md-math::selection,
-.md-math ::selection,
-.md-image::selection,
-.md-image ::selection {
-  background: transparent;
 }
 .md-math-error {
   font-family: var(--mono-font);
@@ -1003,6 +1005,18 @@ body {
   color: var(--fg-muted);
   line-height: 1.5;
 }
+/* A file's preview: the editor's look, smaller, in a read-only editor that scrolls itself. */
+.pk-preview.pk-file {
+  --text-size: calc(15px * var(--zoom, 1));
+  overflow: hidden;
+  padding: 0;
+}
+.pk-preview .cm-scroller {
+  padding: 0.5rem 0.8rem 30vh;
+}
+.pk-preview .cm-line.pk-current {
+  background: var(--bg-line);
+}
 .pk-line {
   padding: 0 0.8rem;
   white-space: pre-wrap;
@@ -1107,10 +1121,6 @@ body {
   height: 0;
   padding: 0;
   background: none;
-}
-/* Not part of the text: a selection reaching across it does not paint it. */
-.cm-editor .cm-deletedChunk ::selection {
-  background: transparent;
 }
 .cm-editor .cm-deletedChunk .cm-deletedLine del {
   text-decoration: none;

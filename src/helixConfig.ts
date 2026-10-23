@@ -1,7 +1,7 @@
-// Your Helix config.toml, read at startup: its theme, the [editor] options
-// this editor has, and its [keys] remaps. Bindings that use commands this
-// editor does not have are skipped as a whole (a sequence run halfway would do
-// something else than intended) and listed in a message.
+// Your Helix config.toml, read at startup and by `:config-reload`: its theme,
+// the [editor] options this editor has, and its [keys] remaps. Bindings that
+// use commands this editor does not have are skipped as a whole (a sequence
+// run halfway would do something else than intended) and listed in a message.
 
 import { config } from "./config.ts";
 import { commands } from "./helix/commands.ts";

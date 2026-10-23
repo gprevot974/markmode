@@ -261,6 +261,8 @@ const browserBackend: Backend = {
   async readText(path) {
     const text = memoryFiles.get(path);
     if (text === undefined) throw new Error(`${path}: not found`);
+    // As files.rs: a NUL byte means an image, a PDF or the like.
+    if (text.includes("\0")) throw new Error(`${path}: binary file`);
     return { text, format: { encoding: "utf-8", bom: false } };
   },
   async writeText(path, contents) {
