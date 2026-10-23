@@ -10,7 +10,7 @@ import { fuzzyMatch } from "./fuzzy.ts";
 import { livePreview, renderAll } from "../preview/livePreview.ts";
 import { isMarkdownPath, loadLanguage, plainLanguage, proseLanguage } from "../languages.ts";
 import { documentPath } from "../images.ts";
-import { kanagawa } from "../theme/kanagawa.ts";
+import { editorTheme } from "../theme/editorTheme.ts";
 
 export type OpenHow = "replace" | "hsplit" | "vsplit";
 
@@ -91,7 +91,7 @@ function fileState(preview: Preview): EditorState {
     doc: Text.of(preview.text.split("\n")),
     extensions: [
       isMarkdownPath(path) ? [proseLanguage, livePreview, renderAll.of(true), documentPath.of(path)] : (plainLanguage(path!) ?? []),
-      kanagawa,
+      editorTheme,
       EditorView.lineWrapping,
       EditorView.editable.of(false),
       EditorState.readOnly.of(true),

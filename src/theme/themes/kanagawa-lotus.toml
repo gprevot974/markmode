@@ -1,0 +1,77 @@
+# Kanagawa Lotus: the light half of Kanagawa, after kanagawa.nvim, with the
+# colors Markmode used when Kanagawa was its default. `:theme kanagawa`
+# pairs it with kanagawa-wave.
+
+"ui.background" = { bg = "lotus-white-3" }
+"ui.text" = "lotus-ink-1"
+
+# Surfaces
+"ui.statusline" = { fg = "lotus-ink-2", bg = "lotus-white-2" }
+"ui.cursorline.primary" = { bg = "lotus-white-line" }
+"ui.selection" = { bg = "lotus-violet-3" }
+"ui.selection.primary" = { bg = "lotus-blue-3" }
+"ui.linenr" = { fg = "lotus-violet-1" }
+"ui.linenr.selected" = { fg = "lotus-orange" }
+"markmode.line" = { bg = "lotus-white-4" }
+"markmode.raised" = { bg = "lotus-white-0" }
+"ui.virtual.jump-label" = "lotus-red"
+
+# Mode colors: fills.
+"ui.statusline.normal" = { bg = "lotus-blue-4" }
+"ui.statusline.insert" = { bg = "lotus-green-2" }
+"ui.statusline.select" = { bg = "lotus-violet-4" }
+
+# Prose
+"markup.heading.1" = "lotus-blue-4"
+"markup.heading.2" = "lotus-teal-1"
+"markup.heading.3" = "lotus-aqua"
+"markup.heading.4" = "lotus-violet-2"
+"markup.bold" = "lotus-amber"
+"markup.italic" = "lotus-pink"
+"markup.raw.inline" = "lotus-green"
+"markup.link.text" = "lotus-teal-1"
+"markup.link.url" = "lotus-teal-1"
+"markup.list" = "lotus-orange"
+"markup.quote" = "lotus-violet-2"
+"diff.plus" = "lotus-green-2"
+"diff.minus" = "lotus-red"
+"info" = "lotus-amber"
+"error" = "lotus-red"
+
+# Code
+"comment" = "lotus-gray-3"
+"keyword" = "lotus-violet-4"
+"function" = "lotus-blue-4"
+"string" = "lotus-green"
+"string.special" = "lotus-teal-1"
+"type" = "lotus-aqua"
+"constant" = "lotus-orange"
+"constant.numeric" = "lotus-pink"
+"operator" = "lotus-yellow-2"
+"variable.other.member" = "lotus-amber"
+
+[palette]
+lotus-white-0 = "#d5cea3"
+lotus-white-2 = "#e5ddb0"
+lotus-white-3 = "#f2ecbc"
+lotus-white-4 = "#e7dba0"
+lotus-ink-1 = "#545464"
+lotus-ink-2 = "#43436c"
+lotus-gray-3 = "#8a8980"
+lotus-violet-1 = "#a09cac"
+lotus-violet-2 = "#766b90"
+lotus-violet-3 = "#c9cbd1"
+lotus-violet-4 = "#624c83"
+lotus-blue-3 = "#9fb5c9"
+lotus-blue-4 = "#4d699b"
+lotus-teal-1 = "#4e8ca2"
+lotus-aqua = "#597b75"
+lotus-green = "#6f894e"
+lotus-green-2 = "#6e915f"
+lotus-yellow-2 = "#836f4a"
+lotus-orange = "#cc6d00"
+lotus-pink = "#b35b79"
+lotus-red = "#c84053"
+# Not Kanagawa's: a darker yellow for bold text, and a step below the background.
+lotus-amber = "#a96b00"
+lotus-white-line = "#e9e1b2"

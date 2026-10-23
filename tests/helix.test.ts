@@ -33,10 +33,19 @@ describe("Helix themes", () => {
     expect(vars["--fg"]).toBe("#ffffff");
     expect(vars["--h1"]).toBe("#d07080");
     expect(vars["--h2"]).toBe("#e0b040");
-    expect(vars["--violet"]).toBe("#9070c0");
+    expect(vars["--mode-select"]).toBe("#9070c0");
+    expect(vars["--keyword"]).toBe("#9070c0");
     expect(vars["--gutter"]).toBe("#e0b040");
     expect(vars["--sel-primary"]).toBe("#334455");
-    expect(vars["--green"]).toBeUndefined();
+    expect(vars["--string"]).toBeUndefined();
+  });
+
+  it("colors what a theme has no scope for with its own colors when one fits", () => {
+    const vars = themeVariables(parseTheme({ "ui.background": { bg: "#101018" }, function: "#7090c0" }));
+    expect(vars["--h1"]).toBe("var(--function)");
+    expect(vars["--link"]).toBe("var(--special)");
+    expect(vars["--special"]).toBe("var(--function)");
+    expect(vars["--strong"]).toBeUndefined();
   });
 
   it("is dark when the background is", async () => {

@@ -6,7 +6,9 @@
 "ui.selection.primary" = { bg = "sel" }
 "ui.linenr" = { fg = "grey-dim" }
 "ui.linenr.selected" = { fg = "blue" }
+
 "ui.statusline.normal" = { bg = "orange" }
+"ui.statusline.insert" = { bg = "blue" }
 "ui.statusline.select" = { bg = "rose" }
 
 "markup.heading.1" = "blue"
@@ -34,7 +36,7 @@
 "constant" = "blue"
 "constant.numeric" = "blue"
 "operator" = "orange"
-"variable.other.member" = "cream"
+"variable.other.member" = "blue"
 
 [palette]
 night = "#1e110c"

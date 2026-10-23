@@ -1,8 +1,8 @@
 // The theme: Entre-Deux, light or dark ("auto" follows the macOS appearance),
-// the built-in Kanagawa, or any Helix theme by name. Helix's own `kanagawa` is
-// the dark half of the built-in one, so that name means the built-in, which
-// also has a light half. A choice made with `:theme` is remembered on this
-// machine and wins over the Helix config.
+// or any Helix theme by name, the ones shipped with the app included. Helix's
+// own `kanagawa` is dark only, so that name means the shipped pair of
+// kanagawa-wave and kanagawa-lotus. A choice made with `:theme` is remembered
+// on this machine and wins over the Helix config.
 
 import { backend } from "../backend.ts";
 import { builtinTheme, builtinThemeNames } from "./builtinThemes.ts";
@@ -11,22 +11,16 @@ import { loadTheme, parseTheme, themeVariables, type Theme } from "./helixTheme.
 /** A theme name, or one theme for each system appearance (Helix's `{ light, dark }`). */
 export type ThemeChoice = string | { light: string; dark: string };
 
-/** Names for Entre-Deux, the default theme, which ships as Helix themes. */
+/** Names for Entre-Deux, the default theme, and for the shipped themes' pairs. */
 const ALIASES: Record<string, ThemeChoice> = {
   auto: { light: "entre-deux-light", dark: "entre-deux" },
   light: "entre-deux-light",
   dark: "entre-deux",
-};
-
-/** Kanagawa, built into style.css rather than read as a Helix theme. */
-const BUILTIN: Record<string, "auto" | "light" | "dark"> = {
-  kanagawa: "auto",
-  "kanagawa-lotus": "light",
-  "kanagawa-wave": "dark",
+  kanagawa: { light: "kanagawa-lotus", dark: "kanagawa-wave" },
 };
 
 const KEY = "markmode.theme";
-/** The last Helix theme's variables, for index.html to set before the first paint. */
+/** The last theme's variables, for index.html to set before the first paint. */
 const VARS_KEY = "markmode.theme-vars";
 const systemLight = matchMedia("(prefers-color-scheme: light)");
 
@@ -65,25 +59,19 @@ async function apply() {
   const picked = preview ?? choice;
   const shown = typeof picked === "string" ? (ALIASES[picked] ?? picked) : picked;
   const name = typeof shown === "string" ? shown : systemIsLight ? shown.light : shown.dark;
-  const builtin = BUILTIN[name];
-  let light: boolean;
-  let vars: Record<string, string> = {};
-  if (builtin) light = builtin === "light" || (builtin === "auto" && systemIsLight);
-  else {
-    const theme = await helixTheme(name);
-    if (gen !== generation) return;
-    light = theme.light;
-    vars = themeVariables(theme);
-  }
+  const theme = await helixTheme(name);
+  if (gen !== generation) return;
+  const light = theme.light;
+  const vars = themeVariables(theme);
   const root = document.documentElement;
   // Including the ones index.html set for the first paint; the zoom is not the theme's.
   for (const v of [...root.style].filter((p) => p.startsWith("--") && p !== "--zoom")) root.style.removeProperty(v);
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
   root.dataset.theme = light ? "light" : "dark";
-  if (!preview) storage((s) => (builtin ? s.removeItem(VARS_KEY) : s.setItem(VARS_KEY, JSON.stringify({ light, vars }))));
+  if (!preview) storage((s) => s.setItem(VARS_KEY, JSON.stringify({ light, vars })));
   // The title bar is transparent over the window, so it takes the theme's
   // background. Its text follows the system only while the theme does.
-  const followsSystem = builtin === "auto" || typeof shown !== "string";
+  const followsSystem = typeof shown !== "string";
   const background = getComputedStyle(root).getPropertyValue("--bg").trim();
   void backend.setAppearance(followsSystem ? null : light ? "light" : "dark", background).catch(() => {});
 }
@@ -145,9 +133,9 @@ export function currentTheme(): string {
   return typeof choice === "string" ? choice : `${choice.light} (light), ${choice.dark} (dark)`;
 }
 
-/** For completion: the built-in names, then every Helix theme found. */
+/** For completion: the names for the shipped themes, then every Helix theme found. */
 export async function themeNames(): Promise<string[]> {
   const helix = await backend.helixThemes().catch(() => []);
-  const named = new Set([...Object.keys(ALIASES), ...Object.keys(BUILTIN), ...builtinThemeNames]);
+  const named = new Set([...Object.keys(ALIASES), ...builtinThemeNames]);
   return [...named, ...helix.filter((n) => !named.has(n))];
 }

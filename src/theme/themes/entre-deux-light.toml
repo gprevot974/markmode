@@ -15,19 +15,20 @@
 "ui.linenr.selected" = { fg = "flame" }
 
 # Mode colors: fills.
-"ui.statusline.normal" = { bg = "teal-dark" }
+"ui.statusline.normal" = { bg = "teal-deep" }
+"ui.statusline.insert" = { bg = "flame" }
 "ui.statusline.select" = { bg = "violet" }
 
 # Prose
 "markup.heading.1" = "flame"
 "markup.heading.2" = "blue-mid"
-"markup.heading.3" = "teal-dark"
-"markup.heading.4" = "teal-deep"
+"markup.heading.3" = "teal-deep"
+"markup.heading.4" = "teal"
 "markup.bold" = "coral"
 "markup.italic" = "violet"
 "markup.raw.inline" = "green"
-"markup.link.text" = "teal-dark"
-"markup.link.url" = "teal-dark"
+"markup.link.text" = "teal-deep"
+"markup.link.url" = "teal-deep"
 "markup.list" = "coral"
 "markup.quote" = "violet"
 "diff.plus" = "green"
@@ -38,24 +39,24 @@
 # Code
 "comment" = "slate"
 "keyword" = "violet"
-"function" = "teal-dark"
+"function" = "teal-deep"
 "string" = "green"
 "type" = "coral"
 "constant" = "flame"
 "constant.numeric" = "coral"
-"operator" = "teal-dark"
-"variable.other.member" = "ink"
+"operator" = "teal-deep"
+"variable.other.member" = "coral"
 
 [palette]
 cream = "#f2f1c2"
-ink = "#173146"
-blue-mid = "#2c5470"
+ink = "#4d6c80"
+blue-mid = "#37698c"
 teal-deep = "#478387"
-teal-dark = "#37636c"
+teal = "#54999e"
 mint = "#c3dad7"
-slate = "#586a79"
-coral = "#a15657"
-flame = "#b26b4c"
+slate = "#819099"
+coral = "#bd7271"
+flame = "#b86b3b"
 magenta = "#a54460"
 green = "#3f744d"
 violet = "#7e5983"

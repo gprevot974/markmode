@@ -13,10 +13,12 @@
 "ui.selection.primary" = { bg = "blue-mid" }
 "ui.linenr" = { fg = "teal-deep" }
 "ui.linenr.selected" = { fg = "flame" }
+"ui.virtual.jump-label" = "flame"
 
 # Mode colors: fills. Violet is the select-mode fill and tints the selection
 # in select mode; it is also what code blocks use for keywords.
 "ui.statusline.normal" = { bg = "teal-light" }
+"ui.statusline.insert" = { bg = "flame" }
 "ui.statusline.select" = { bg = "violet" }
 
 # Prose
@@ -41,11 +43,12 @@
 "keyword" = "violet"
 "function" = "teal-light"
 "string" = "green"
+"string.special" = "flame"
 "type" = "coral"
 "constant" = "flame"
 "constant.numeric" = "coral"
 "operator" = "teal-light"
-"variable.other.member" = "yellow"
+"variable.other.member" = "coral"
 
 [palette]
 blue-night = "#18232c"
@@ -54,8 +57,8 @@ teal-deep = "#3c6f72"
 teal-bright = "#4b8a88"
 teal-light = "#71afa8"
 mint = "#c3dad7"
-grey = "#a8a696"
-yellow = "#fcfad5"
+grey = "#9e9e8b"
+yellow = "#e6e4c1"
 coral = "#e08d90"
 flame = "#cc785d"
 magenta = "#d66589"

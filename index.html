@@ -7,16 +7,17 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/style.css" />
     <script>
-      // Pick light or dark, a Helix theme's colors and the zoom before the
+      // Pick light or dark, the last theme's colors and the zoom before the
       // first paint; src/theme/appearance.ts and src/ui/zoom.ts take over.
+      // Without them (the first start), the base theme's (Entre-Deux's) show.
       try {
         const root = document.documentElement;
         const t = localStorage.getItem("markmode.theme");
-        const helix = JSON.parse(localStorage.getItem("markmode.theme-vars") ?? "null");
-        let light = t === "light" || t === "kanagawa-lotus" || (t !== "dark" && t !== "kanagawa-wave" && matchMedia("(prefers-color-scheme: light)").matches);
-        if (helix) {
-          light = helix.light;
-          for (const [k, v] of Object.entries(helix.vars)) root.style.setProperty(k, v);
+        const saved = JSON.parse(localStorage.getItem("markmode.theme-vars") ?? "null");
+        let light = t === "light" || (t !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
+        if (saved) {
+          light = saved.light;
+          for (const [k, v] of Object.entries(saved.vars)) root.style.setProperty(k, v);
         }
         root.dataset.theme = light ? "light" : "dark";
         const zoom = localStorage.getItem("markmode.zoom");

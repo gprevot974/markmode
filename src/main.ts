@@ -34,7 +34,7 @@ import { countNotes, countText, readable, type Readable, type Span } from "./wor
 import { MAX_MATCHES, searchRegex, searchText, type SearchMatch } from "./search.ts";
 import { clampSelection, type Jump, JumpList } from "./jumplist.ts";
 import type { Snapshot, SnapshotKind } from "./backend.ts";
-import { kanagawa } from "./theme/kanagawa.ts";
+import { editorTheme } from "./theme/editorTheme.ts";
 import { currentTheme, endThemePreview, initTheme, previewTheme, reloadTheme, setTheme, themeNames } from "./theme/appearance.ts";
 import { applyHelixConfig } from "./helixConfig.ts";
 import { applySettings, readsHelixConfig, SETTINGS_TEMPLATE } from "./settings.ts";
@@ -296,7 +296,7 @@ class App implements Host {
       settingsSlots.spelling.of(this.spelling(prose)),
       selectionDecorations,
       jumpLabels,
-      kanagawa,
+      editorTheme,
       settingsSlots.keys.of(this.keys()),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.contentAttributes.of({ spellcheck: "false", autocorrect: "off", autocapitalize: "off" }),

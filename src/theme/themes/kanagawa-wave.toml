@@ -1,0 +1,78 @@
+# Kanagawa Wave: the dark half of Kanagawa, after kanagawa.nvim, with the
+# colors Markmode used when Kanagawa was its default. `:theme kanagawa`
+# pairs it with kanagawa-lotus.
+
+"ui.background" = { bg = "sumi-ink-1" }
+"ui.text" = "fuji-white"
+
+# Surfaces
+"ui.statusline" = { fg = "old-white", bg = "sumi-ink-0" }
+"ui.cursorline.primary" = { bg = "sumi-ink-line" }
+"ui.selection" = { bg = "wave-blue-sel" }
+"ui.selection.primary" = { bg = "wave-blue-primary" }
+"ui.linenr" = { fg = "sumi-ink-4" }
+"ui.linenr.selected" = { fg = "ronin-yellow" }
+"markmode.line" = { bg = "sumi-ink-2" }
+"markmode.raised" = { bg = "sumi-ink-3" }
+"ui.virtual.jump-label" = "peach-red"
+
+# Mode colors: fills.
+"ui.statusline.normal" = { bg = "crystal-blue" }
+"ui.statusline.insert" = { bg = "autumn-green" }
+"ui.statusline.select" = { bg = "oni-violet" }
+
+# Prose
+"markup.heading.1" = "crystal-blue"
+"markup.heading.2" = "spring-blue"
+"markup.heading.3" = "wave-aqua"
+"markup.heading.4" = "spring-violet"
+"markup.bold" = "carp-yellow"
+"markup.italic" = "sakura-pink"
+"markup.raw.inline" = "spring-green"
+"markup.link.text" = "spring-blue"
+"markup.link.url" = "spring-blue"
+"markup.list" = "surimi-orange"
+"markup.quote" = "spring-violet"
+"diff.plus" = "autumn-green"
+"diff.minus" = "peach-red"
+"info" = "carp-yellow"
+"error" = "peach-red"
+
+# Code
+"comment" = "fuji-gray"
+"keyword" = "oni-violet"
+"function" = "crystal-blue"
+"string" = "spring-green"
+"string.special" = "spring-blue"
+"type" = "wave-aqua"
+"constant" = "surimi-orange"
+"constant.numeric" = "sakura-pink"
+"operator" = "boat-yellow"
+"variable.other.member" = "carp-yellow"
+
+[palette]
+sumi-ink-0 = "#16161d"
+sumi-ink-1 = "#1f1f28"
+sumi-ink-2 = "#2a2a37"
+sumi-ink-3 = "#363646"
+sumi-ink-4 = "#54546d"
+fuji-white = "#dcd7ba"
+old-white = "#c8c093"
+fuji-gray = "#727169"
+crystal-blue = "#7e9cd8"
+oni-violet = "#957fb8"
+wave-aqua = "#7aa89f"
+spring-green = "#98bb6c"
+autumn-green = "#76946a"
+carp-yellow = "#e6c384"
+boat-yellow = "#c0a36e"
+surimi-orange = "#ffa066"
+ronin-yellow = "#ff9e3b"
+sakura-pink = "#d27e99"
+peach-red = "#ff5d62"
+spring-blue = "#7fb4ca"
+spring-violet = "#9cabca"
+# Not Kanagawa's: a step above the background, and selections that read on it.
+sumi-ink-line = "#24242f"
+wave-blue-sel = "#2b3e57"
+wave-blue-primary = "#3a5f80"

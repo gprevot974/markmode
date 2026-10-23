@@ -1,34 +1,11 @@
-/* Kanagawa: wave (dark) and lotus (light). The variables keep wave's color
-   names; lotus maps each to its own counterpart. Prose is set in a
-   proportional face; code stays monospace. */
+/* The colors are variables named for what they color. Their values come
+   from the theme: Entre-Deux's are set in index.html at build time (see
+   theme/baseTheme.ts), and the theme chosen sets its own over them
+   (theme/helixTheme.ts). Prose is set in a proportional face; code stays
+   monospace. */
 :root {
-  --bg: #1f1f28;
-  --bg-dim: #16161d;
-  --bg-line: #2a2a37;
-  --bg-raised: #363646;
-  --fg: #dcd7ba;
-  --fg-dim: #727169;
-  --fg-muted: #c8c093;
-  --blue: #7e9cd8;
-  --violet: #957fb8;
-  --aqua: #7aa89f;
-  --green: #98bb6c;
-  --autumn-green: #76946a;
-  --yellow: #e6c384;
-  --boat-yellow: #c0a36e;
-  --orange: #ffa066;
-  --pink: #d27e99;
-  --red: #ff5d62;
-  --spring-blue: #7fb4ca;
-  --spring-violet: #9cabca;
-  /* Selections are lighter than the cursorline so they read on it. */
-  --sel: #2b3e57;
-  --sel-primary: #3a5f80;
-  --sel-select: #463a5e;
-  --sel-select-primary: #5c4a7d;
-  --cursorline: #24242f;
-  --gutter: #54546d;
-  --gutter-active: #ff9e3b;
+  /* Titles in popups and pickers, drop targets, column resizing. */
+  --accent: var(--mode-normal);
   --shadow: rgb(0 0 0 / 45%);
   color-scheme: dark;
 
@@ -38,54 +15,10 @@
   /* --zoom is set on the root element by ui/zoom.ts (Cmd-= and Cmd--). */
   --measure: calc(46rem * var(--zoom, 1));
   --text-size: calc(18px * var(--zoom, 1));
-
-  /* What the preview is colored with. A Helix theme sets these from its
-     markup scopes; the built-in theme takes them from its palette. */
-  --h1: var(--blue);
-  --h2: var(--spring-blue);
-  --h3: var(--aqua);
-  --h4: var(--spring-violet);
-  --strong: var(--yellow);
-  --em: var(--pink);
-  --code: var(--green);
-  --link: var(--spring-blue);
-  --list: var(--orange);
-  --quote: var(--spring-violet);
-  /* Outside changes under review, and comments. */
-  --diff-plus: var(--autumn-green);
-  --diff-minus: var(--red);
-  --note: var(--yellow);
 }
 
 :root[data-theme="light"] {
-  --bg: #f2ecbc;
-  --bg-dim: #e5ddb0;
-  --bg-line: #e7dba0;
-  --bg-raised: #d5cea3;
-  --fg: #545464;
-  --fg-dim: #8a8980;
-  --fg-muted: #43436c;
-  --blue: #4d699b;
-  --violet: #624c83;
-  --aqua: #597b75;
-  --green: #6f894e;
-  --autumn-green: #6e915f;
-  --yellow: #a96b00;
-  --boat-yellow: #836f4a;
-  --orange: #cc6d00;
-  --pink: #b35b79;
-  --red: #c84053;
-  --spring-blue: #4e8ca2;
-  --spring-violet: #766b90;
-  /* Darker than the cursorline, for the same reason as in wave. */
-  --sel: #c9cbd1;
-  --sel-primary: #9fb5c9;
-  --sel-select: #d6cce6;
-  --sel-select-primary: #b8a6d9;
-  --cursorline: #e9e1b2;
-  --gutter: #a09cac;
-  --gutter-active: #cc6d00;
-  --shadow: rgb(84 84 100 / 25%);
+  --shadow: color-mix(in srgb, var(--fg) 25%, transparent);
   color-scheme: light;
 }
 
@@ -214,7 +147,7 @@ body {
   background: var(--fg);
 }
 .mode-select .hx-cursor-primary {
-  background: var(--violet);
+  background: var(--mode-select);
 }
 
 /* Text under the cursor or a selection drops its own background (inline code)
@@ -250,7 +183,7 @@ body {
   /* The span's box is its font's content area; with the line's taller
      line-height the label would sit lower than the letters it covers. */
   line-height: normal;
-  color: var(--red);
+  color: var(--jump-label);
   background: var(--bg);
   white-space: nowrap;
 }
@@ -270,7 +203,7 @@ body {
 }
 
 .hx-misspelled {
-  text-decoration: underline wavy color-mix(in srgb, var(--red) 75%, transparent);
+  text-decoration: underline wavy color-mix(in srgb, var(--error) 75%, transparent);
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
   text-decoration-skip-ink: none;
@@ -363,10 +296,11 @@ body {
   color: var(--list);
 }
 .md-task-done {
-  color: var(--autumn-green);
+  color: var(--diff-plus);
 }
+/* The bar takes the select mode's color: Helix themes have no scope for it. */
 .md-quote {
-  border-left: 3px solid var(--violet);
+  border-left: 3px solid var(--mode-select);
   padding-left: 1rem !important;
   color: var(--quote);
   font-style: italic;
@@ -428,8 +362,8 @@ body {
 .md-math-error {
   font-family: var(--mono-font);
   font-size: 0.88em;
-  color: var(--red);
-  text-decoration: underline wavy var(--red);
+  color: var(--error);
+  text-decoration: underline wavy var(--error);
 }
 
 /* Images (an inline widget, shown on a line of their own). */
@@ -530,7 +464,7 @@ body {
 }
 .md-col-handle:hover,
 .md-col-resizing .md-col-handle:active {
-  background: linear-gradient(to right, transparent 2px, var(--blue) 2px, var(--blue) 5px, transparent 5px);
+  background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 5px, transparent 5px);
 }
 .md-col-resizing,
 .md-col-resizing * {
@@ -757,7 +691,7 @@ body {
   display: none;
 }
 #prompt-label {
-  color: var(--blue);
+  color: var(--accent);
 }
 #prompt-input {
   flex: 1;
@@ -775,13 +709,13 @@ body {
   padding: 0 0.7rem;
   font-weight: 700;
   color: var(--bg);
-  background: var(--blue);
+  background: var(--mode-normal);
 }
 .mode-insert .sl-mode {
-  background: var(--autumn-green);
+  background: var(--mode-insert);
 }
 .mode-select .sl-mode {
-  background: var(--violet);
+  background: var(--mode-select);
 }
 .window:not(.active) .statusline {
   color: var(--fg-dim);
@@ -797,7 +731,7 @@ body {
 }
 .sl-file.dirty::after {
   content: " [+]";
-  color: var(--orange);
+  color: var(--highlight);
 }
 .sl-spacer {
   flex: 1;
@@ -809,10 +743,10 @@ body {
   color: var(--fg-dim);
 }
 #message.error {
-  color: var(--red);
+  color: var(--error);
 }
 #pending {
-  color: var(--orange);
+  color: var(--highlight);
 }
 
 /* ── Popups: which-key infobox and command-line completion ───────────────── */
@@ -845,7 +779,7 @@ body {
 }
 .info-title {
   text-align: center;
-  color: var(--blue);
+  color: var(--accent);
   font-weight: 700;
   margin-bottom: 0.3rem;
 }
@@ -855,7 +789,7 @@ body {
   column-gap: 1.2rem;
 }
 .info-keys {
-  color: var(--orange);
+  color: var(--highlight);
 }
 
 /* Above the prompt: the doc box (right-aligned), then the completion menu. */
@@ -932,7 +866,7 @@ body {
   border-bottom: 1px solid var(--bg-raised);
 }
 .pk-title {
-  color: var(--blue);
+  color: var(--accent);
   max-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -984,7 +918,7 @@ body {
   color: var(--fg-dim);
 }
 .pk-row.pk-group {
-  color: var(--blue);
+  color: var(--accent);
 }
 .pk-prefix {
   color: var(--fg-dim);
@@ -1008,7 +942,7 @@ body {
   white-space: pre;
 }
 .pk-hl {
-  color: var(--orange);
+  color: var(--highlight);
   font-weight: 700;
 }
 .pk-preview {
@@ -1109,7 +1043,7 @@ body {
 }
 .menu-key {
   width: 1ch;
-  color: var(--orange);
+  color: var(--highlight);
   font-family: var(--mono-font);
 }
 
@@ -1229,9 +1163,9 @@ body {
   z-index: 50;
   pointer-events: none;
   box-sizing: border-box;
-  border: 2px dashed var(--blue);
+  border: 2px dashed var(--accent);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--blue) 8%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .drop-hint-label {
   position: absolute;
@@ -1254,7 +1188,7 @@ body {
   z-index: 51;
   width: 2px;
   pointer-events: none;
-  background: var(--blue);
+  background: var(--accent);
 }
 
 /* The hint in an empty buffer: the one for the window's mode. */

@@ -4,6 +4,8 @@
 // from the theme's [palette], or one of the terminal's named colors. A theme
 // can build on another with `inherits = "name"`.
 
+import { shade } from "./color.ts";
+
 type Table = Record<string, unknown>;
 
 interface Style {
@@ -93,8 +95,8 @@ function luminance(hex: string): number {
 
 type Source = [scope: string, attr: keyof Style];
 
-// Each variable takes the first of its sources the theme defines. Variables
-// with none keep the built-in value, so a sparse theme still looks complete.
+// The variables the editor is styled with, named for what they color. Each
+// takes the first of its sources the theme defines.
 const ROLES: Record<string, Source[]> = {
   "--bg": [["ui.background", "bg"]],
   "--fg": [["ui.text", "fg"], ["ui.background", "fg"]],
@@ -106,19 +108,30 @@ const ROLES: Record<string, Source[]> = {
   "--sel-primary": [["ui.selection.primary", "bg"], ["ui.selection", "bg"]],
   "--gutter": [["ui.linenr", "fg"]],
   "--gutter-active": [["ui.linenr.selected", "fg"], ["ui.linenr", "fg"]],
-  "--blue": [["ui.statusline.normal", "bg"], ["function", "fg"]],
-  "--autumn-green": [["ui.statusline.insert", "bg"], ["diff.plus", "fg"], ["string", "fg"]],
-  "--violet": [["ui.statusline.select", "bg"], ["keyword", "fg"]],
-  "--red": [["ui.virtual.jump-label", "fg"], ["error", "fg"], ["diff.minus", "fg"]],
-  "--orange": [["constant", "fg"], ["warning", "fg"]],
-  "--yellow": [["variable.other.member", "fg"], ["warning", "fg"]],
-  "--green": [["string", "fg"]],
-  "--aqua": [["type", "fg"]],
-  "--pink": [["constant.numeric", "fg"], ["constant", "fg"]],
-  "--spring-blue": [["markup.link.text", "fg"], ["string.special.url", "fg"], ["label", "fg"]],
-  "--spring-violet": [["markup.quote", "fg"], ["punctuation", "fg"]],
-  "--boat-yellow": [["operator", "fg"]],
-  // The preview, from the markup scopes when the theme has them.
+  // Markmode's own scopes, which Helix ignores: table headers and bands, the
+  // current line in pickers; borders, rules and keys. Shades of the
+  // background when the theme does not set them.
+  "--bg-line": [["markmode.line", "bg"]],
+  "--bg-raised": [["markmode.raised", "bg"]],
+  // The statusline's mode fills; the normal one also titles popups and pickers.
+  "--mode-normal": [["ui.statusline.normal", "bg"], ["function", "fg"]],
+  "--mode-insert": [["ui.statusline.insert", "bg"], ["diff.plus", "fg"], ["string", "fg"]],
+  "--mode-select": [["ui.statusline.select", "bg"], ["keyword", "fg"]],
+  // Keys in menus, matched characters, unsaved changes.
+  "--highlight": [["constant", "fg"], ["warning", "fg"]],
+  "--error": [["error", "fg"], ["diff.minus", "fg"]],
+  "--jump-label": [["ui.virtual.jump-label", "fg"], ["error", "fg"], ["diff.minus", "fg"]],
+  // Code, in fenced blocks and other files.
+  "--keyword": [["keyword", "fg"]],
+  "--function": [["function", "fg"], ["ui.statusline.normal", "bg"]],
+  "--property": [["variable.other.member", "fg"], ["warning", "fg"]],
+  "--constant": [["constant", "fg"], ["warning", "fg"]],
+  "--type": [["type", "fg"]],
+  "--number": [["constant.numeric", "fg"], ["constant", "fg"]],
+  "--operator": [["operator", "fg"]],
+  "--string": [["string", "fg"]],
+  "--special": [["string.special", "fg"], ["string.special.url", "fg"], ["markup.link.text", "fg"], ["label", "fg"]],
+  // The preview, from the markup scopes.
   "--h1": [["markup.heading.1", "fg"], ["markup.heading", "fg"]],
   "--h2": [["markup.heading.2", "fg"], ["markup.heading", "fg"]],
   "--h3": [["markup.heading.3", "fg"], ["markup.heading", "fg"]],
@@ -128,13 +141,42 @@ const ROLES: Record<string, Source[]> = {
   "--code": [["markup.raw.inline", "fg"], ["markup.raw", "fg"]],
   "--link": [["markup.link.text", "fg"], ["markup.link.url", "fg"]],
   "--list": [["markup.list", "fg"]],
-  "--quote": [["markup.quote", "fg"]],
+  "--quote": [["markup.quote", "fg"], ["punctuation", "fg"]],
   "--diff-plus": [["diff.plus", "fg"]],
   "--diff-minus": [["diff.minus", "fg"]],
   "--note": [["info", "fg"], ["hint", "fg"]],
 };
 
-/** The CSS variables for a theme. Colors derived from others use color-mix(). */
+// What a variable the theme has no source for takes instead, so that a theme
+// without markup scopes still colors the preview with its own colors.
+const FALLBACKS: Record<string, string> = {
+  "--keyword": "--mode-select",
+  "--type": "--function",
+  "--operator": "--fg",
+  "--string": "--mode-insert",
+  "--special": "--function",
+  "--h1": "--function",
+  "--h2": "--special",
+  "--h3": "--type",
+  "--h4": "--quote",
+  "--strong": "--property",
+  "--em": "--number",
+  "--code": "--string",
+  "--link": "--special",
+  "--list": "--highlight",
+  "--diff-plus": "--mode-insert",
+  "--diff-minus": "--error",
+  "--note": "--property",
+};
+
+/** The variables `themeVariables` can set: the base theme sets them all. */
+export const themeVariableNames = [...Object.keys(ROLES), "--sel-select", "--sel-select-primary"];
+
+/**
+ * The CSS variables for a theme. Variables it has no color for are left out,
+ * keeping the base theme's (Entre-Deux), unless they can be derived from its
+ * others: the derived ones are shades of its colors, var() or color-mix().
+ */
 export function themeVariables(theme: Theme): Record<string, string> {
   const vars: Record<string, string> = {};
   for (const [name, sources] of Object.entries(ROLES)) {
@@ -146,18 +188,29 @@ export function themeVariables(theme: Theme): Record<string, string> {
       }
     }
   }
-  // Built from the theme's own colors rather than left at the built-in ones,
+  for (const [name, fallback] of Object.entries(FALLBACKS)) {
+    if (!vars[name] && vars[fallback]) vars[name] = `var(${fallback})`;
+  }
+  // Built from the theme's own colors rather than left at the base ones,
   // which would clash.
   const mix = (a: string, b: string, pct: number) => `color-mix(in srgb, ${a} ${pct}%, ${b})`;
-  if (vars["--bg"] && vars["--fg"]) {
-    vars["--bg-line"] = mix("var(--fg)", "var(--bg)", 8);
-    vars["--bg-raised"] = mix("var(--fg)", "var(--bg)", 16);
+  const bg = theme.scopes.get("ui.background")?.bg;
+  if (bg) {
+    // The background's hue, a step darker (lighter on a dark one) and a little
+    // more colorful, as Kanagawa's surfaces are.
+    vars["--bg-line"] ??= shade(bg, theme.light, 0.05, 1.25);
+    vars["--bg-raised"] ??= shade(bg, theme.light, 0.095, 1.1);
     vars["--bg-dim"] ??= mix("var(--bg)", "black", theme.light ? 94 : 70);
   }
   if (vars["--sel-primary"]) {
     vars["--sel"] ??= mix("var(--sel-primary)", "var(--bg)", 60);
-    vars["--sel-select"] = mix("var(--sel)", "var(--violet)", 75);
-    vars["--sel-select-primary"] = mix("var(--sel-primary)", "var(--violet)", 70);
+    vars["--sel-select"] = mix("var(--sel)", "var(--mode-select)", 75);
+    vars["--sel-select-primary"] = mix("var(--sel-primary)", "var(--mode-select)", 70);
   }
   return vars;
+}
+
+/** CSS setting a theme's variables under `selector`. */
+export function themeCss(selector: string, vars: Record<string, string>): string {
+  return `${selector} {\n${Object.entries(vars).map(([k, v]) => `  ${k}: ${v};\n`).join("")}}\n`;
 }

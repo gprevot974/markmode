@@ -1,4 +1,4 @@
-// Light and dark Entre-Deux, Kanagawa, `:theme`, and Helix themes.
+// Light and dark Entre-Deux, the first paint, Kanagawa, `:theme`, and Helix themes.
 
 import type { Harness } from "./run.ts";
 
@@ -19,6 +19,15 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   };
 
   check("auto follows a light system", (await theme()).mode === "light", await theme());
+
+  // The first start: no colors saved from a previous one, before the app's code runs.
+  const first = await page.context().newPage();
+  await first.addInitScript(() => ["markmode.theme", "markmode.theme-vars"].forEach((k) => localStorage.removeItem(k)));
+  await first.route(/\/src\/main\.ts/, (route) => route.abort());
+  await first.goto(page.url());
+  const firstPaint = await first.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await first.close();
+  check("the first start paints Entre-Deux before the app runs", firstPaint === "rgb(242, 241, 194)", firstPaint);
 
   await type(":");
   await type("theme d");
@@ -56,7 +65,7 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   check("an unknown theme is an error and changes nothing", message!.includes("nonexistent") && (await theme()).bg === paper.bg, message);
   await run("theme kanagawa");
   const kanagawa = await theme();
-  check("kanagawa is the built-in, without leftovers", kanagawa.mode === "light" && kanagawa.bg === "rgb(242, 236, 188)" && kanagawa.h1 === "#4d699b", kanagawa);
+  check("kanagawa is lotus on a light system, without leftovers", kanagawa.mode === "light" && kanagawa.bg === "rgb(242, 236, 188)" && kanagawa.h1 === "#4d699b", kanagawa);
   await run("theme auto");
   const auto = await theme();
   check("auto is entre-deux-light on a light system", auto.mode === "light" && auto.bg === "rgb(242, 241, 194)", auto);

@@ -1,13 +1,13 @@
-// Kanagawa, the theme from your Helix config, for the editor and for syntax
-// highlighting inside code blocks. Colors come from the CSS variables in
-// style.css, so switching between wave (dark) and lotus (light) is a matter
-// of setting `data-theme` on the root element.
+// The editor's look, whatever the theme: its fonts, the centered column of
+// text, the line numbers, and the colors of code in fenced blocks and other
+// files. Colors are the theme's CSS variables (helixTheme.ts), so a theme
+// applies by setting them on the root element.
 
 import { EditorView } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 
-const editorTheme = EditorView.theme(
+const layout = EditorView.theme(
   {
     "&": { color: "var(--fg)", backgroundColor: "var(--bg)", height: "100%" },
     // Set here rather than in style.css: CodeMirror's base theme is more specific.
@@ -46,22 +46,22 @@ const editorTheme = EditorView.theme(
 // Code inside fenced blocks, plus the few markdown tokens that are not
 // handled by the live preview's own classes.
 const highlight = HighlightStyle.define([
-  { tag: t.keyword, color: "var(--violet)" },
+  { tag: t.keyword, color: "var(--keyword)" },
   { tag: [t.name, t.deleted, t.character, t.macroName], color: "var(--fg)" },
-  { tag: [t.function(t.variableName), t.labelName], color: "var(--blue)" },
-  { tag: [t.propertyName], color: "var(--yellow)" },
-  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: "var(--orange)" },
+  { tag: [t.function(t.variableName), t.labelName], color: "var(--function)" },
+  { tag: [t.propertyName], color: "var(--property)" },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: "var(--constant)" },
   { tag: [t.definition(t.name), t.separator], color: "var(--fg)" },
-  { tag: [t.typeName, t.className, t.namespace], color: "var(--aqua)" },
-  { tag: [t.number, t.bool, t.atom], color: "var(--pink)" },
-  { tag: [t.operator, t.operatorKeyword], color: "var(--boat-yellow)" },
-  { tag: [t.url, t.escape, t.regexp, t.link], color: "var(--spring-blue)" },
+  { tag: [t.typeName, t.className, t.namespace], color: "var(--type)" },
+  { tag: [t.number, t.bool, t.atom], color: "var(--number)" },
+  { tag: [t.operator, t.operatorKeyword], color: "var(--operator)" },
+  { tag: [t.url, t.escape, t.regexp, t.link], color: "var(--special)" },
   { tag: [t.meta, t.comment], color: "var(--fg-dim)", fontStyle: "italic" },
-  { tag: [t.string, t.special(t.string), t.inserted], color: "var(--green)" },
-  { tag: t.invalid, color: "var(--red)" },
+  { tag: [t.string, t.special(t.string), t.inserted], color: "var(--string)" },
+  { tag: t.invalid, color: "var(--error)" },
   { tag: t.processingInstruction, color: "var(--fg-dim)" },
   { tag: t.contentSeparator, color: "var(--gutter)" },
-  { tag: t.quote, color: "var(--spring-violet)" },
+  { tag: t.quote, color: "var(--quote)" },
 ]);
 
-export const kanagawa = [editorTheme, syntaxHighlighting(highlight)];
+export const editorTheme = [layout, syntaxHighlighting(highlight)];

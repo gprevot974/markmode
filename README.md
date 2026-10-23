@@ -276,16 +276,24 @@ The default theme is Entre-Deux: `entre-deux`, on dark blue, when macOS is in
 dark mode, `entre-deux-light`, on cream, when it is light. `:theme light`,
 `:theme dark` or `:theme auto` switches, and the choice is remembered. Two
 more come with the app: `plaine-des-sables` (a dark brown page) and
-`plaine-des-sables-light` (a beige one). `:theme kanagawa` is Kanagawa, wave or lotus with macOS;
-`kanagawa-wave` and `kanagawa-lotus` pin one.
+`plaine-des-sables-light` (a beige one), and Kanagawa: `:theme kanagawa` is
+`kanagawa-wave` or `kanagawa-lotus` with macOS, and either name pins one.
 
 Any Helix theme works too: `:theme gruvbox`. As in Helix, the theme shows as
 you type or tab to its name, and Esc puts the previous one back. Completion
 lists every theme found in `~/.config/helix/themes` and in the Helix
 installation's runtime (Homebrew, Linux packages, a source checkout, or
 `$HELIX_RUNTIME`). Its UI
-colors and its `markup.*` scopes color the editor and the preview. The name
-`kanagawa` means the built-in theme, which has a light half that Helix's lacks. A file in `~/.config/helix/themes` with the name of a theme that comes with the app takes its place.
+colors and its `markup.*` scopes color the editor and the preview; what it
+has no color for keeps Entre-Deux's, or one of its own colors when one fits
+(its function color for headings without `markup.heading`). Table headers,
+borders and rules are shades of its background; two keys of Markmode's own,
+which Helix ignores, set them instead: `"markmode.line" = { bg = "…" }` (table
+headers and bands, the current line in pickers) and `"markmode.raised"`
+(borders, rules, keys). The name
+`kanagawa` means the pair that comes with the app, since Helix's is dark only.
+A file in `~/.config/helix/themes` with the name of a theme that comes with the
+app takes its place.
 
 ## Settings
 
@@ -606,7 +614,7 @@ src/directives.ts directives: table widths (and the older footer, author...)
 src/preview/      live preview decorations, table rendering, and the syntax added to markdown:
                   front matter, wiki-links, footnotes, math (math.ts, with KaTeX)
 src/export/       markdown → docx and → html, export styles (style.ts: every key), their files and reference
-src/theme/        Kanagawa, Helix themes (and the ones shipped, in themes/), light and dark
+src/theme/        Helix themes as CSS variables, the ones shipped (themes/), the editor's look
 src/settings.ts   your settings: ~/.config/markmode/config.toml, and its template
 src/helixConfig.ts  reading ~/.config/helix/config.toml
 src/fileformat.ts line endings and encodings

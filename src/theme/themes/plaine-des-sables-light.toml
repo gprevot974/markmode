@@ -6,7 +6,9 @@
 "ui.selection.primary" = { bg = "sky-soft" }
 "ui.linenr" = { fg = "grey" }
 "ui.linenr.selected" = { fg = "orange" }
+
 "ui.statusline.normal" = { bg = "blue-dark" }
+"ui.statusline.insert" = { bg = "orange" }
 "ui.statusline.select" = { bg = "rose" }
 
 "markup.heading.1" = "orange"
@@ -34,10 +36,10 @@
 "constant" = "orange"
 "constant.numeric" = "orange-dark"
 "operator" = "blue-dark"
-"variable.other.member" = "brown"
+"variable.other.member" = "orange"
 
 [palette]
-sand = "#faf6f4"
+sand = "#ebdeda"
 brown = "#542519"
 orange = "#a85e3d"
 orange-dark = "#a85e3d"
@@ -47,6 +49,6 @@ blue-dark = "#4c8093"
 rose = "#a7666e"
 grey = "#8c9fa4"
 grey-dark = "#687c82"
-sky-soft = "#dbe3e7"
-sand-panel = "#ede9e8"
-sand-line = "#f4f0ee"
+sky-soft = "#cad7db"
+sand-panel = "#cdbfbb"
+sand-line = "#ddcdc8"
