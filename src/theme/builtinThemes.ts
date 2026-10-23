@@ -3,17 +3,15 @@
 
 import { parse as parseToml } from "smol-toml";
 import entreDeux from "./themes/entre-deux.toml?raw";
-import entreDeuxDark from "./themes/entre-deux-dark.toml?raw";
 import entreDeuxLight from "./themes/entre-deux-light.toml?raw";
 import plaineDesSables from "./themes/plaine-des-sables.toml?raw";
-import plaineDesSablesDark from "./themes/plaine-des-sables-dark.toml?raw";
+import plaineDesSablesLight from "./themes/plaine-des-sables-light.toml?raw";
 
 const sources: Record<string, string> = {
   "entre-deux": entreDeux,
-  "entre-deux-dark": entreDeuxDark,
   "entre-deux-light": entreDeuxLight,
   "plaine-des-sables": plaineDesSables,
-  "plaine-des-sables-dark": plaineDesSablesDark,
+  "plaine-des-sables-light": plaineDesSablesLight,
 };
 
 export const builtinThemeNames = Object.keys(sources);

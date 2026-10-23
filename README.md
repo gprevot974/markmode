@@ -259,10 +259,9 @@ instead.
 
 The default theme is Entre-Deux: `entre-deux`, on dark blue, when macOS is in
 dark mode, `entre-deux-light`, on cream, when it is light. `:theme light`,
-`:theme dark` or `:theme auto` switches, and the choice is remembered. Three
-more come with the app: `entre-deux-dark` (a darker page), and
-`plaine-des-sables` and `plaine-des-sables-dark` (a beige page and a dark brown
-one). `:theme kanagawa` is Kanagawa, wave or lotus with macOS;
+`:theme dark` or `:theme auto` switches, and the choice is remembered. Two
+more come with the app: `plaine-des-sables` (a dark brown page) and
+`plaine-des-sables-light` (a beige one). `:theme kanagawa` is Kanagawa, wave or lotus with macOS;
 `kanagawa-wave` and `kanagawa-lotus` pin one.
 
 Any Helix theme works too: `:theme gruvbox`. As in Helix, the theme shows as

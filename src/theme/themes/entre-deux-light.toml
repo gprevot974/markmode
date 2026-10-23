@@ -47,7 +47,7 @@
 "variable.other.member" = "ink"
 
 [palette]
-cream = "#f0eedb"
+cream = "#f2f1c2"
 ink = "#173146"
 blue-mid = "#2c5470"
 teal-deep = "#478387"
@@ -60,6 +60,6 @@ magenta = "#a54460"
 green = "#3f744d"
 violet = "#7e5983"
 mint-soft = "#dce2d8"
-cream-panel = "#e7e5d1"
-cream-line = "#edebd9"
-grey-light = "#b2b1a5"
+cream-panel = "#e7e5b4"
+cream-line = "#edecbd"
+grey-light = "#b2b2a1"

@@ -1,52 +1,52 @@
-"ui.background" = { bg = "sand" }
-"ui.text" = "brown"
-"ui.statusline" = { fg = "brown", bg = "sand-panel" }
-"ui.cursorline.primary" = { bg = "sand-line" }
-"ui.selection" = { bg = "sky-soft" }
-"ui.selection.primary" = { bg = "sky-soft" }
-"ui.linenr" = { fg = "grey" }
-"ui.linenr.selected" = { fg = "orange" }
-"ui.statusline.normal" = { bg = "blue-dark" }
+"ui.background" = { bg = "night" }
+"ui.text" = "cream"
+"ui.statusline" = { fg = "cream", bg = "night-panel" }
+"ui.cursorline.primary" = { bg = "night-line" }
+"ui.selection" = { bg = "sel" }
+"ui.selection.primary" = { bg = "sel" }
+"ui.linenr" = { fg = "grey-dim" }
+"ui.linenr.selected" = { fg = "blue" }
+"ui.statusline.normal" = { bg = "orange" }
 "ui.statusline.select" = { bg = "rose" }
 
-"markup.heading.1" = "orange"
-"markup.heading.2" = "blue-dark"
-"markup.heading.3" = "green-dark"
-"markup.heading.4" = "gold-dark"
+"markup.heading.1" = "blue"
+"markup.heading.2" = "orange"
+"markup.heading.3" = "green"
+"markup.heading.4" = "gold"
 "markup.bold" = "rose"
-"markup.italic" = "grey-dark"
-"markup.raw.inline" = "green-dark"
-"markup.link.text" = "blue-dark"
-"markup.link.url" = "blue-dark"
-"markup.list" = "orange-dark"
-"markup.quote" = "grey-dark"
+"markup.italic" = "green"
+"markup.raw.inline" = "sky"
+"markup.link.text" = "orange"
+"markup.link.url" = "orange"
+"markup.list" = "blue"
+"markup.quote" = "grey"
 
-"diff.plus" = "green-dark"
+"diff.plus" = "green"
 "diff.minus" = "rose"
-"info" = "orange-dark"
+"info" = "blue"
 "error" = "rose"
 
-"comment" = "grey-dark"
+"comment" = "grey"
 "keyword" = "rose"
-"function" = "blue-dark"
-"string" = "green-dark"
-"type" = "gold-dark"
-"constant" = "orange"
-"constant.numeric" = "orange-dark"
-"operator" = "blue-dark"
-"variable.other.member" = "brown"
+"function" = "orange"
+"string" = "green"
+"type" = "gold"
+"constant" = "blue"
+"constant.numeric" = "blue"
+"operator" = "orange"
+"variable.other.member" = "cream"
 
 [palette]
-sand = "#faf6f4"
-brown = "#542519"
-orange = "#a85e3d"
-orange-dark = "#a85e3d"
-gold-dark = "#917444"
-green-dark = "#698048"
-blue-dark = "#4c8093"
-rose = "#a7666e"
+night = "#1e110c"
+night-panel = "#30231f"
+night-line = "#281b17"
+cream = "#f9eae5"
+orange = "#bb6a46"
+gold = "#d5ad68"
+green = "#839f5a"
+blue = "#5e9eb5"
+rose = "#a57077"
 grey = "#8c9fa4"
-grey-dark = "#687c82"
-sky-soft = "#dbe3e7"
-sand-panel = "#ede9e8"
-sand-line = "#f4f0ee"
+grey-dim = "#565555"
+sky = "#b1d5e4"
+sel = "#62503e"

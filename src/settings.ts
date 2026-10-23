@@ -37,8 +37,8 @@ export const SETTINGS_TEMPLATE = `# Markmode settings. Uncomment a line to chang
 
 # "auto" follows the macOS appearance (entre-deux when dark, entre-deux-light
 # when light); "dark" or "light" pins one; "kanagawa" does the same with
-# Kanagawa's wave and lotus; any other name is a Helix theme. entre-deux-dark,
-# plaine-des-sables and plaine-des-sables-dark also come with the app.
+# Kanagawa's wave and lotus; any other name is a Helix theme.
+# plaine-des-sables and plaine-des-sables-light also come with the app.
 # theme = "auto"
 # theme = { light = "catppuccin_latte", dark = "catppuccin_mocha" }
 

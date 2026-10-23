@@ -59,5 +59,5 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   check("kanagawa is the built-in, without leftovers", kanagawa.mode === "light" && kanagawa.bg === "rgb(242, 236, 188)" && kanagawa.h1 === "#4d699b", kanagawa);
   await run("theme auto");
   const auto = await theme();
-  check("auto is entre-deux-light on a light system", auto.mode === "light" && auto.bg === "rgb(240, 238, 219)", auto);
+  check("auto is entre-deux-light on a light system", auto.mode === "light" && auto.bg === "rgb(242, 241, 194)", auto);
 }

@@ -1,8 +1,0 @@
-# L'Entre-Deux, darker: a near-black blue page, with the surfaces that sit on
-# it (code blocks, properties, command bar) a step lighter instead of darker.
-inherits = "entre-deux"
-
-[palette]
-blue-night = "#0e171e"
-blue-deep = "#202b34"
-blue-line = "#1a252d"

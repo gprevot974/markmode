@@ -1,6 +1,7 @@
 # L'Entre-Deux: dark theme from the poster's colors.
-# Darkest blue background, pale yellow text. The blue surfaces below teal-deep
-# are not on the poster: they are shades of its darkest blue.
+# Darkest blue background, pale yellow text, with the surfaces that sit on it
+# (code blocks, properties, command bar) a step lighter. The blue surfaces
+# below teal-deep are not on the poster: they are shades of its darkest blue.
 
 "ui.background" = { bg = "blue-night" }
 "ui.text" = "yellow"
@@ -47,7 +48,7 @@
 "variable.other.member" = "yellow"
 
 [palette]
-blue-night = "#212f3a"
+blue-night = "#18232c"
 blue-mid = "#3c5364"
 teal-deep = "#3c6f72"
 teal-bright = "#4b8a88"
@@ -60,5 +61,5 @@ flame = "#cc785d"
 magenta = "#d66589"
 green = "#6fa181"
 violet = "#b98abd"
-blue-deep = "#162129"
-blue-line = "#293946"
+blue-deep = "#25323d"
+blue-line = "#1f2b35"
