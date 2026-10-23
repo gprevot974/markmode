@@ -23,6 +23,7 @@ export function applySettings(settings: Table): string[] {
   const skipped = applyHelixConfig(settings);
   const editor = isTable(settings.editor) ? settings.editor : {};
   if (typeof editor.spellcheck === "boolean") config.spellcheck = editor.spellcheck;
+  if (typeof editor.hints === "boolean") config.hints = editor.hints;
   const images = isTable(settings.images) ? settings.images : {};
   if (typeof images.folder === "string") config.imageFolder = images.folder.trim().replace(/^\.?\/+|\/+$/g, "");
   return skipped;
@@ -55,6 +56,9 @@ export const SETTINGS_TEMPLATE = `# Markmode settings. Uncomment a line to chang
 # text-width = 80
 # Save modified files when the window loses focus.
 # auto-save = { focus-lost = true }
+# Hints for getting started: on an empty buffer, and when a key that does
+# nothing in normal mode is typed (press i to type). :hints toggles them.
+# hints = true
 
 [images]
 # Where pasted and dropped images go, next to the document.

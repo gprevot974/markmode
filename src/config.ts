@@ -28,6 +28,9 @@ export const config = {
   textWidth: 80,
   // [editor.auto-save] focus-lost
   autoSaveOnFocusLost: true,
+  // Hints for newcomers to modal editing: on an empty buffer, and when a key
+  // that does nothing is typed in normal mode
+  hints: true,
 
   // [images] folder: where pasted and dropped images go, next to the document
   imageFolder: "assets",

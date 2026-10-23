@@ -11,6 +11,7 @@ export const commandDocs: Record<string, string> = {
   open_below: "Open new paragraph, list item or line below",
   open_above: "Open new paragraph, list item or line above",
   command_mode: "Enter command mode",
+  command_palette: "Open command palette",
 
   move_char_left: "Move left",
   move_char_right: "Move right",

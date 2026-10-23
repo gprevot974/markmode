@@ -92,6 +92,13 @@ Roughly in order of value:
 
 ## 6. Onboarding
 
+*Done, but for the README's GIF: see "Getting started" in the README. The
+palette (`space ?`, as in Helix, and Cmd-Shift-P) lists typable commands and
+key bindings by their docs; `:tutor` opens the tutorial as a scratch buffer,
+`:keys` the bindings in effect. The welcome shows once, on the first start;
+the empty-buffer and unbound-key hints stay until `:hints off` (which writes
+`[editor] hints = false`).*
+
 Modal editing loses most new users within five minutes.
 
 - A searchable command palette, so features can be found without memorizing

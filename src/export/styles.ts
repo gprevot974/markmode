@@ -10,6 +10,7 @@
 // project's or your config.toml (next to styles/), else "default".
 
 import { parse as parseToml } from "smol-toml";
+import { setTomlKey } from "../tomlEdit.ts";
 import { BUILT_IN, defaultStyle, parseStyleFile, type ExportStyle } from "./style.ts";
 
 /** How styles are read: through the backend in the app, from disk on the command line. */
@@ -129,16 +130,5 @@ export async function configuredStyle(fs: StyleFs, dirs: StyleDirs): Promise<str
 
 /** config.toml's text with `[export] style` set, touching nothing else in it. */
 export function setConfiguredStyle(text: string, name: string): string {
-  const line = `style = ${JSON.stringify(name)}`;
-  const lines = text.split("\n");
-  const start = lines.findIndex((l) => /^\s*\[export\]\s*(#.*)?$/.test(l));
-  if (start === -1) return `${text.replace(/\n*$/, text ? "\n\n" : "")}[export]\n${line}\n`;
-  for (let i = start + 1; i < lines.length && !/^\s*\[/.test(lines[i]); i++) {
-    if (/^\s*style\s*=/.test(lines[i])) {
-      lines[i] = line;
-      return lines.join("\n");
-    }
-  }
-  lines.splice(start + 1, 0, line);
-  return lines.join("\n");
+  return setTomlKey(text, "export", "style", JSON.stringify(name));
 }

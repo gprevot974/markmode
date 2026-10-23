@@ -3,7 +3,7 @@
 // as `jk`, which type their keys out when the sequence does not complete.
 
 import { Prec, type Extension } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, ViewPlugin } from "@codemirror/view";
 import { modeField } from "./state.ts";
 import { type Binding, type KeyTrie, isTrie, keyName } from "./keymap.ts";
 import { type Ctx, type Host, type Info, commands, pasteText } from "./commands.ts";
@@ -19,7 +19,8 @@ interface CharReader {
   onCancel?: () => void;
 }
 
-function describe(binding: Binding): string {
+/** What a binding does, as the which-key popup says it. */
+export function describe(binding: Binding): string {
   if (isTrie(binding)) return "…";
   const names = Array.isArray(binding) ? binding : [binding];
   return names.map((n) => (n.startsWith(":") ? n : (commandDocs[n] ?? n))).join(", ");
@@ -36,6 +37,15 @@ function trieInfo(path: string[], trie: KeyTrie): Info {
     title: minorModeNames[path.join("")] ?? path.join(""),
     rows: [...rows].map(([desc, keys]) => [keys.join(", "), desc]),
   };
+}
+
+/** Each editor's key handler, for keys pressed by other means than the keyboard (the command palette). */
+const handlers = new WeakMap<EditorView, (key: string) => void>();
+
+/** Presses `keys` (Helix notation) in `view`'s normal mode, as if typed. */
+export function pressKeys(view: EditorView, keys: string[]) {
+  const handler = handlers.get(view);
+  for (const key of keys) handler?.(key);
 }
 
 /** The character a key types, for keys that type one. */
@@ -106,7 +116,13 @@ export function helixKeys(
       return;
     }
     const binding = (pending ?? keys.normal)[key];
-    if (binding === undefined) return reset();
+    if (binding === undefined) {
+      // A key that does nothing on its own: likely text typed in normal mode.
+      const typed = !pending && charOf(key) !== null;
+      reset();
+      if (typed) host.unboundKey(key);
+      return;
+    }
     if (isTrie(binding)) {
       pending = binding;
       pendingKeys.push(key);
@@ -142,7 +158,16 @@ export function helixKeys(
     return true;
   }
 
-  return Prec.highest(
+  return Prec.highest([
+    ViewPlugin.define((view) => {
+      const handler = (key: string) => (reader ? readChar(key) : normal(view, key));
+      handlers.set(view, handler);
+      return {
+        destroy() {
+          if (handlers.get(view) === handler) handlers.delete(view);
+        },
+      };
+    }),
     EditorView.domEventHandlers({
       keydown(e, view) {
         if (e.isComposing || e.keyCode === 229) return false;
@@ -167,5 +192,5 @@ export function helixKeys(
         return true;
       },
     }),
-  );
+  ]);
 }

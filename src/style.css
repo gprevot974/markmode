@@ -991,6 +991,22 @@ body {
   white-space: pre;
   margin-right: 0.8rem;
 }
+/* A command's keys, right-aligned after it (the command palette). */
+.pk-row:has(.pk-detail) {
+  display: flex;
+  gap: 1.6rem;
+}
+.pk-row:has(.pk-detail) .pk-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pk-detail {
+  flex: none;
+  color: var(--fg-dim);
+  white-space: pre;
+}
 .pk-hl {
   color: var(--orange);
   font-weight: 700;
@@ -1239,4 +1255,30 @@ body {
   width: 2px;
   pointer-events: none;
   background: var(--blue);
+}
+
+/* The hint in an empty buffer: the one for the window's mode. */
+.cm-placeholder .empty-hint {
+  font-family: var(--ui-font);
+  font-size: 0.9em;
+  line-height: 1.9;
+  color: var(--fg-dim);
+}
+.empty-hint .hint-normal > span {
+  display: block;
+}
+.empty-hint .hint-insert,
+.mode-insert .empty-hint .hint-normal {
+  display: none;
+}
+.mode-insert .empty-hint .hint-insert {
+  display: inline;
+}
+.empty-hint kbd {
+  font-family: var(--mono-font);
+  font-size: 0.9em;
+  padding: 0.05em 0.35em;
+  border-radius: 3px;
+  color: var(--fg);
+  background: var(--bg-raised);
 }

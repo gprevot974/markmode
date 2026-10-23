@@ -8,7 +8,7 @@ export interface Typable {
   aliases: string[];
   doc: string;
   /** What the argument completes to. */
-  args?: "path" | "theme" | "encoding" | "line-ending" | "zoom" | "table-widths" | "export-style" | "style-name";
+  args?: "path" | "on-off" | "theme" | "encoding" | "line-ending" | "zoom" | "table-widths" | "export-style" | "style-name";
 }
 
 export const typables: Typable[] = [
@@ -44,7 +44,7 @@ export const typables: Typable[] = [
   { name: "config-open", aliases: [], doc: "Open your settings, ~/.config/markmode/config.toml (written with every setting commented out when there is none), and list the bindings this editor skips" },
   { name: "config-open-helix", aliases: [], doc: "Open your Helix config.toml, which applies under your settings" },
   { name: "config-reload", aliases: [], doc: "Apply your settings and Helix config.toml again, without a restart" },
-  { name: "theme", aliases: [], doc: "Change the theme: auto (Kanagawa, following macOS), light, dark, or any Helix theme by name. Without an argument, shows the current one", args: "theme" },
+  { name: "theme", aliases: [], doc: "Change the theme: auto (Entre-Deux, following macOS), light, dark, or any Helix theme by name. Without an argument, shows the current one", args: "theme" },
   { name: "history", aliases: [], doc: "Pick an earlier version of the file, kept on each open, save and outside change, to bring back" },
   { name: "reset-diff-change", aliases: ["diffget", "diffg"], doc: "Reject the outside changes under the selections, bringing back the text from before" },
   { name: "accept-all-changes", aliases: [], doc: "Accept every outside change under review" },
@@ -55,7 +55,10 @@ export const typables: Typable[] = [
   { name: "table-widths", aliases: [], doc: "Set the column widths of the table at the cursor (:table-widths 20 30 50), in a widths directive above it. Without an argument, writes the widths it shows; reset removes them", args: "table-widths" },
   { name: "zoom", aliases: [], doc: "Make the text bigger or smaller: in, out, reset or a percentage (also Cmd-=, Cmd--, Cmd-0)", args: "zoom" },
   { name: "goto", aliases: ["g"], doc: "Goto line number" },
-  { name: "help", aliases: ["h"], doc: "List the typable commands" },
+  { name: "help", aliases: ["h"], doc: "Open the command palette: every command and key, searchable by what it does (also Space ?, Cmd-Shift-P)" },
+  { name: "tutor", aliases: [], doc: "Open the tutorial: modal editing, moving, selecting, saving and exporting, to practice on as you read" },
+  { name: "keys", aliases: [], doc: "Open the reference of every key binding, with your remaps" },
+  { name: "hints", aliases: [], doc: "Turn the hints for getting started on or off (:hints off), in your settings; without an argument, toggles them", args: "on-off" },
 ];
 
 export function findTypable(name: string): Typable | undefined {

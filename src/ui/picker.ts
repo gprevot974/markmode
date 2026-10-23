@@ -3,8 +3,9 @@
 // A file's preview looks as the editor shows it: markdown rendered by the
 // live preview, other files highlighted by their language.
 
-import { EditorState, Text } from "@codemirror/state";
-import { Decoration, EditorView } from "@codemirror/view";
+import { EditorState, StateEffect, StateField, Text } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
+import { forceParsing } from "@codemirror/language";
 import { fuzzyMatch } from "./fuzzy.ts";
 import { livePreview, renderAll } from "../preview/livePreview.ts";
 import { isMarkdownPath, loadLanguage, plainLanguage, proseLanguage } from "../languages.ts";
@@ -31,6 +32,8 @@ export interface PickerOptions<T> {
   text(item: T): string;
   /** Unmatched columns shown before the text (buffer ids, flags). */
   prefix?(item: T): string;
+  /** Shown dimmed after the text (a command's keys); the pattern matches it too. */
+  detail?(item: T): string;
   preview?(item: T): Preview | null | Promise<Preview | null>;
   /**
    * Items that form a tree, listed depth-first: rows are indented by depth and
@@ -64,22 +67,35 @@ export interface PickerOptions<T> {
 }
 
 const PREVIEW_LINES = 1000;
+/** How far past the line shown a preview is parsed before it paints, and for how long at most. */
+const PARSE_AHEAD = 5000;
+const PARSE_TIMEOUT = 100;
 
-/** A file's preview as a read-only editor (markdown with every line rendered), the cursor on `line`, highlighted. */
+/** The highlighted line of a file's preview: the start of the line, or null for none. */
+const setCurrentLine = StateEffect.define<number | null>();
+const currentLine = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setCurrentLine)) deco = e.value === null ? Decoration.none : Decoration.set(Decoration.line({ class: "pk-current" }).range(e.value));
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+/** A file's preview as a read-only editor (markdown with every line rendered). */
 function fileState(preview: Preview): EditorState {
   const path = preview.path ?? null;
-  const doc = Text.of(preview.text.split("\n"));
-  const at = preview.line ? doc.line(Math.max(1, Math.min(preview.line, doc.lines))).from : 0;
   return EditorState.create({
-    doc,
-    selection: { anchor: at },
+    doc: Text.of(preview.text.split("\n")),
     extensions: [
       isMarkdownPath(path) ? [proseLanguage, livePreview, renderAll.of(true), documentPath.of(path)] : (plainLanguage(path!) ?? []),
       kanagawa,
       EditorView.lineWrapping,
       EditorView.editable.of(false),
       EditorState.readOnly.of(true),
-      preview.line ? EditorView.decorations.of(Decoration.set(Decoration.line({ class: "pk-current" }).range(at))) : [],
+      currentLine,
     ],
   });
 }
@@ -123,8 +139,11 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   let previewGen = 0;
   let current: T | null | undefined;
   const previewCache = new Map<T, Preview | null>();
-  const fileStates = new WeakMap<Preview, EditorState>();
+  // One state per file shown, kept with its parse as far as it got: the
+  // headings of a document all preview the same one, at different lines.
+  const fileStates = new Map<string, EditorState>();
   let fileView: EditorView | null = null;
+  let shownFile: string | null = null;
 
   const rowHeight = () => (list.firstElementChild as HTMLElement | null)?.offsetHeight || 22;
   const pageSize = () => Math.max(1, Math.floor(list.clientHeight / rowHeight()));
@@ -167,8 +186,9 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
     else {
       const scored: [Row<T>, number][] = [];
       for (const row of all) {
-        const m = fuzzyMatch(pattern, row.text);
-        if (m) scored.push([{ ...row, indices: m.indices }, m.score]);
+        const detail = opts.detail?.(row.item);
+        const m = fuzzyMatch(pattern, detail ? `${row.text}  ${detail}` : row.text);
+        if (m) scored.push([{ ...row, indices: m.indices.filter((i) => i < row.text.length) }, m.score]);
       }
       // Higher score first, then shorter text.
       scored.sort((a, b) => b[1] - a[1] || a[0].text.length - b[0].text.length);
@@ -246,6 +266,13 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
         el.appendChild(p);
       }
       el.appendChild(highlighted(row.text, row.indices));
+      const detail = opts.detail?.(row.item);
+      if (detail) {
+        const d = document.createElement("span");
+        d.className = "pk-detail";
+        d.textContent = detail;
+        el.appendChild(d);
+      }
       el.onmousedown = (e) => {
         e.preventDefault();
         selected = top + i;
@@ -295,16 +322,26 @@ export function openPicker<T>(opts: PickerOptions<T>, refocus: () => void) {
   }
 
   function showFile(preview: Preview) {
-    let state = fileStates.get(preview);
-    if (!state) fileStates.set(preview, (state = fileState(preview)));
-    if (fileView) fileView.setState(state);
-    else {
+    const key = `${preview.path ?? ""}\0${preview.text}`;
+    if (fileView && shownFile !== key) {
+      if (shownFile !== null) fileStates.set(shownFile, fileView.state);
+      fileView.setState(fileStates.get(key) ?? fileState(preview));
+    } else if (!fileView) {
       previewBox.replaceChildren();
       previewBox.classList.add("pk-file");
-      fileView = new EditorView({ state, parent: previewBox });
+      fileView = new EditorView({ state: fileStates.get(key) ?? fileState(preview), parent: previewBox });
     }
-    const at = preview.line ? state.selection.main.head : 0;
-    fileView.dispatch({ effects: EditorView.scrollIntoView(at, { y: preview.line ? "center" : "start" }) });
+    shownFile = key;
+    const doc = fileView.state.doc;
+    const at = preview.line ? doc.line(Math.max(1, Math.min(preview.line, doc.lines))).from : 0;
+    // A new state is parsed only at its start; the rest would come in the
+    // background (half a second later in WebKit), showing raw markdown until
+    // then. Parse to past the line now, so it paints rendered.
+    forceParsing(fileView, Math.min(doc.length, at + PARSE_AHEAD), PARSE_TIMEOUT);
+    fileView.dispatch({
+      selection: { anchor: at },
+      effects: [setCurrentLine.of(preview.line ? at : null), EditorView.scrollIntoView(at, { y: preview.line ? "center" : "start" })],
+    });
   }
 
   function move(delta: number) {

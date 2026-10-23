@@ -25,6 +25,18 @@ working on, read it rendered, edit it the Helix way, and export a formatted
   in an export style: built in, your own or the project's, as TOML files you
   can edit here, with the document shown in it as you do (see [Export](#export)).
 
+## Getting started
+
+New to Helix, or to modal editing? Keys are commands in normal mode (`NOR` in
+the statusline): `i` starts typing, `Esc` stops. `:tutor` teaches the basics
+in ten minutes, on a page to practice on. `Space ?` (or ⌘⇧P) is the command
+palette: type what you want to do, and Enter runs it, its keys shown beside
+it. `:keys` lists every key binding. An empty buffer shows where to start,
+and so does the message line after a key that does nothing in normal mode
+(text typed in the wrong mode, likely); `:hints off` turns both off, by
+writing `hints = false` under `[editor]` in your [settings](#settings), and
+`:hints on` (or `:hints` alone, which toggles) brings them back.
+
 ## Running
 
 ```bash
@@ -76,9 +88,11 @@ node scripts/build-docx.ts input.md [output.docx] [--style name]
 | `:export-style [name\|reset]`, `:export-style-default [name]` | pick the document's export style; the one for documents naming none |
 | `:export-style-new <name> [project]`, `:export-style-open [name]` | start an export style, edit one |
 | `:export-preview`, `:export-help` | show documents in their export style; the export reference |
+| `:help`, `:tutor`, `:keys` | the command palette (`space ?`, ⌘⇧P); the tutorial; every key binding |
+| `:hints [on\|off]` | the hints for getting started, in your settings (toggles without an argument) |
 | `:<n>` | go to line *n* |
 
-macOS shortcuts also work: ⌘S save, ⌘O open, ⌘⇧E export, ⌘= and ⌘- zoom in and
+macOS shortcuts also work: ⌘S save, ⌘O open, ⌘⇧E export, ⌘⇧P command palette, ⌘= and ⌘- zoom in and
 out, ⌘0 back to 100%. The zoom sizes the text and its column, not the
 statusline, and is kept for the next start.
 
@@ -90,8 +104,9 @@ Normal and select mode (`v`) follow Helix: `hjkl`, `w b e W B E`, `f t F T`, `A-
 `mi ma mm ms mr md`, `zz zt zb zj zk`, `C-u C-d C-b C-f`, `[space ]space`,
 `space y/p/P/R/e`, `]g [g ]G [G` (changes under review). Counts work (`3w`,
 `5j`, `12G`). Additions for this editor: `space g` (deciding on changes),
-`space d` (list of changes), `space c`, `space C`, `]c`, `[c` (comments), `space h` (version history) and
-`gf` on links (Helix's goto file).
+`space d` (list of changes), `space c`, `space C`, `]c`, `[c` (comments), `space h` (version history),
+`space ?` (command palette, as in Helix) and `gf` on links (Helix's goto file).
+`:keys` lists them all, with your remaps.
 
 ### Moving around prose
 
@@ -285,6 +300,7 @@ theme = "auto"             # or { light = "...", dark = "..." }, or a Helix them
 
 [editor]
 spellcheck = true          # underline misspelled words
+hints = true               # where to start: in an empty buffer, after a key doing nothing
 cursorline = true
 gutters = []               # ["line-numbers"] for line numbers
 soft-wrap = { enable = true }
@@ -390,9 +406,14 @@ too, where Helix has decrement, which this editor lacks). Pressing Enter in a li
 Files other than markdown (an export style, config.toml) open as plain text,
 highlighted, without the preview.
 
+`space ?` (or ⌘⇧P, or `:help`) is the command palette: every typable
+command and key binding, by what it does, with its keys, shortcut and
+command name beside it to fuzzy-filter on too. Enter runs it; a command taking
+an argument goes to the command line instead, where it completes.
+
 Change bindings in your [settings](#settings) or your Helix config.toml. They use Helix's
-command names; see `src/helix/keymap.ts` for the defaults and `src/helix/commands.ts`
-for every command.
+command names; `:keys` lists the bindings in effect, `src/helix/keymap.ts` has the
+defaults and `src/helix/commands.ts` every command.
 
 ## Export
 
@@ -570,6 +591,8 @@ src/helix/        modal editing: state, motions, text objects, commands, keymap,
 src/review.ts     reviewing outside changes inline (with the prose diff of src/diff.ts)
 src/comments.ts   comments in CriticMarkup (parsing in src/criticmarkup.ts)
 src/history.ts    the version history picker
+src/palette.ts    the command palette and the key reference (:keys)
+src/tutor.md      the tutorial (:tutor)
 src/outline.ts    headings, for the heading pickers
 src/search.ts     space /: global search (the files on disk are searched by src-tauri/src/search.rs)
 src/links.ts      following links and wiki-links (gf)
@@ -605,12 +628,14 @@ cargo test --manifest-path src-tauri/Cargo.toml
 The unit tests cover the ported Helix motions and text objects, the docx
 output, export styles, front matter, line endings, Helix themes and config, the prose diff, CriticMarkup,
 the history preview, reflow, headings, the jumplist, global search, links,
+the command palette, the key reference, the tutor's commands,
 images, footnotes, math and the HTML export. The browser tests run the
 editor in Chrome against the in-memory backend with real key presses: live
 preview, windows, buffers, pickers, spelling, themes, line endings, crash
 recovery (a page reload stands in for a restart), reviewing outside changes
 (across two windows too), comments, version history, zoom, moving by rows,
-`o`/`O`, the heading pickers, the jumplist, export styles and the export
+`o`/`O`, the heading pickers, the jumplist, the hints for getting started,
+the command palette, export styles and the export
 preview, the HTML export, global search, following links, images, footnotes, math, and a
 120,000-line file, with timings. They use the installed Chrome, or
 `CHROME_PATH`. The Rust tests cover encodings, atomic writes, the version

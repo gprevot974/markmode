@@ -1,13 +1,13 @@
 import { Compartment, EditorSelection, EditorState, type Extension, Prec, type StateEffect, Text, Transaction } from "@codemirror/state";
-import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from "@codemirror/view";
+import { EditorView, drawSelection, keymap, lineNumbers, placeholder, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
 
 import { parse as parseToml } from "smol-toml";
 import { config, resetConfig } from "./config.ts";
 import { backend, type DragDrop, isTauri } from "./backend.ts";
 import { helixState, modeField, nextBoundaryIn, setMode, type Mode } from "./helix/state.ts";
-import { helixKeys } from "./helix/dispatcher.ts";
-import { normalKeys, insertKeys, mergeKeys } from "./helix/keymap.ts";
+import { helixKeys, pressKeys } from "./helix/dispatcher.ts";
+import { normalKeys, insertKeys, mergeKeys, type KeyTrie } from "./helix/keymap.ts";
 import { selectionDecorations } from "./helix/cursor.ts";
 import { cursorLines } from "./helix/cursorline.ts";
 import { jumpLabels } from "./helix/jumplabels.ts";
@@ -38,6 +38,7 @@ import { kanagawa } from "./theme/kanagawa.ts";
 import { currentTheme, endThemePreview, initTheme, previewTheme, reloadTheme, setTheme, themeNames } from "./theme/appearance.ts";
 import { applyHelixConfig } from "./helixConfig.ts";
 import { applySettings, readsHelixConfig, SETTINGS_TEMPLATE } from "./settings.ts";
+import { setTomlKey } from "./tomlEdit.ts";
 import { altText, freeName, imageFiles, imageLink, type ImageSource, inside, isImageName, pastedName, unusedImages } from "./imageInput.ts";
 import { hideDropHint, showDropHint } from "./ui/dropHint.ts";
 import { openPrompt, type Completion, type PromptOptions } from "./ui/prompt.ts";
@@ -45,7 +46,9 @@ import { openPicker, type OpenHow } from "./ui/picker.ts";
 import { fuzzyFilter } from "./ui/fuzzy.ts";
 import { renderInfobox } from "./ui/infobox.ts";
 import { Layout, type Split, type SplitDir, type Tile } from "./ui/layout.ts";
-import { findTypable, matchTypables, typables } from "./typable.ts";
+import { findTypable, matchTypables } from "./typable.ts";
+import { entryDetail, entryPreview, keyLabel, keysReference, type PaletteEntry, paletteEntries } from "./palette.ts";
+import tutor from "./tutor.md?raw";
 import {
   defaultFormat,
   describeFormat,
@@ -138,6 +141,18 @@ const MAX_HEADING_FILES = 2000;
 
 /** How long after the last edit the crash-recovery copies are written. */
 const RECOVERY_DELAY = 1000;
+
+/** Shown in an empty buffer: where to start, in normal mode and in insert mode (style.css shows the one for the mode). */
+function emptyHint(): HTMLElement {
+  const el = document.createElement("span");
+  el.className = "empty-hint";
+  el.innerHTML =
+    `<span class="hint-normal"><span>Normal mode: keys are commands. <kbd>i</kbd> to start typing, <kbd>Esc</kbd> to stop.</span>` +
+    `<span><kbd>Space</kbd> shows commands; <kbd>Space ?</kbd> or <kbd>⌘⇧P</kbd> finds one by what it does.</span>` +
+    `<span><kbd>:tutor</kbd> teaches the keys; <kbd>:open</kbd> or <kbd>⌘O</kbd> opens a file.</span></span>` +
+    `<span class="hint-insert">Insert mode: type away. <kbd>Esc</kbd> goes back to normal mode.</span>`;
+  return el;
+}
 
 /** What a crash-recovery copy holds. */
 interface RecoveryCopy {
@@ -294,7 +309,12 @@ class App implements Host {
   }
 
   private viewSettings(): Extension {
-    return [config.lineNumbers ? lineNumbers() : [], cursorLines(config.cursorline), config.softWrap ? EditorView.lineWrapping : []];
+    return [
+      config.lineNumbers ? lineNumbers() : [],
+      cursorLines(config.cursorline),
+      config.softWrap ? EditorView.lineWrapping : [],
+      config.hints ? placeholder(emptyHint) : [],
+    ];
   }
 
   private spelling(prose: boolean): Extension {
@@ -306,13 +326,18 @@ class App implements Host {
     });
   }
 
+  /** The key bindings in effect: the defaults with your remaps. */
+  private keymaps(): { normal: KeyTrie; insert: KeyTrie } {
+    return {
+      normal: mergeKeys(normalKeys, config.keys.normal),
+      insert: mergeKeys(insertKeys, config.keys.insert),
+    };
+  }
+
   private keys(): Extension {
     return helixKeys(
       this,
-      {
-        normal: mergeKeys(normalKeys, config.keys.normal),
-        insert: mergeKeys(insertKeys, config.keys.insert),
-      },
+      this.keymaps(),
       (keys) => ($("pending").textContent = keys),
       renderInfobox,
     );
@@ -883,8 +908,9 @@ class App implements Host {
   }
 
   /** `:` with completion of command names and, for commands taking one, paths. */
-  commandLine() {
+  commandLine(initial?: string) {
     this.prompt(":", {
+      initial,
       onSubmit: (line) => void this.runTypable(line).finally(endThemePreview),
       onCancel: endThemePreview,
       // `:theme <name>` shows the theme as it is typed or tabbed to, as in Helix.
@@ -916,6 +942,7 @@ class App implements Host {
     if (typable?.args === "encoding") return choices(encodings);
     if (typable?.args === "line-ending") return choices(lineEndings);
     if (typable?.args === "zoom") return choices(["in", "out", "reset", "100", "125", "150"]);
+    if (typable?.args === "on-off") return choices(["on", "off"]);
     if (typable?.args === "table-widths") return choices(["reset"]);
     if (typable?.args === "export-style" || typable?.args === "style-name") {
       const names = (await listStyles(this.styleFs, await this.styleDirs(this.active.doc))).map((e) => e.name);
@@ -933,6 +960,58 @@ class App implements Host {
         const name = e.isDir ? `${e.name}/` : e.name;
         return { insert: dirPart + name, from: space + 1, label: name, partial: e.isDir };
       });
+  }
+
+  /** `space ?`, Cmd-Shift-P and `:help`: every command and key binding, to find one by what it does and run it. */
+  commandPalette() {
+    const view = this.view;
+    openPicker<PaletteEntry>(
+      {
+        title: "commands",
+        items: paletteEntries(this.keymaps().normal),
+        text: (entry) => entry.label,
+        detail: entryDetail,
+        preview: (entry) => ({ text: entryPreview(entry) }),
+        hint: "Type what you want to do · Enter runs it · Esc closes",
+        onSelect: (entry) => this.runPaletteEntry(entry, view),
+      },
+      () => this.view.focus(),
+    );
+  }
+
+  private runPaletteEntry(entry: PaletteEntry, view: EditorView) {
+    if (entry.typable) {
+      // One taking an argument goes to the command line, where it completes.
+      if (entry.typable.args) return this.commandLine(`${entry.typable.name} `);
+      return void this.runTypable(entry.typable.name);
+    }
+    // The keys are normal mode's.
+    if (view.state.field(modeField) === "insert") {
+      void commands.normal_mode({ view, host: this, count: 1, hasCount: false, readChar: () => {} });
+    }
+    pressKeys(view, entry.keys[0]);
+  }
+
+  /** `:hints`: the hints for getting started on or off, now and in your settings. */
+  private async setHints(on: boolean) {
+    if (!this.configDir) return this.message("hints: no config directory here", "error");
+    const path = `${this.configDir}/config.toml`;
+    const text = (await this.styleFs.read(path)) ?? SETTINGS_TEMPLATE;
+    await backend.createDir(this.configDir);
+    await backend.writeText(path, setTomlKey(text, "editor", "hints", String(on)));
+    const open = this.docs.find((d) => d.path === path);
+    if (open) await this.onDiskChange(open);
+    config.hints = on;
+    const effects = settingsSlots.view.reconfigure(this.viewSettings());
+    for (const doc of this.docs) doc.state = doc.state.update({ effects }).state;
+    for (const win of this.layout.windows()) win.view.dispatch({ effects });
+    this.message(`hints: ${on ? "on" : "off"}, in ${this.docName({ path } as Doc, true)}${on ? "" : "; :hints on brings them back"}`);
+  }
+
+  /** A key that does nothing in normal mode: someone typing text, likely, who has not met modes yet. */
+  unboundKey(key: string) {
+    if (!config.hints) return;
+    this.message(`${keyLabel(key)} does nothing in normal mode, where keys are commands: i to type, Esc to stop, Space ? to find a command, :tutor to learn the keys, :hints off to stop these`);
   }
 
   /** Where relative paths and the pickers start: the current file's directory. */
@@ -1093,6 +1172,9 @@ class App implements Host {
               : ":config-reload applies changes",
           );
         }
+        case "hints":
+          if (arg && arg !== "on" && arg !== "off") return this.message("hints: on or off", "error");
+          return await this.setHints(arg ? arg === "on" : !config.hints);
         case "config-open-helix": {
           const path = await backend.helixConfigPath();
           if (!path) return this.message("no Helix config here", "error");
@@ -1144,7 +1226,15 @@ class App implements Host {
         case "goto":
           return this.gotoLine(Number(arg));
         case "help":
-          return this.message(typables.map((t) => `:${t.aliases[0] ?? t.name}`).join("  ") + "  :<line>");
+          return this.commandPalette();
+        case "tutor":
+          this.show(this.active, this.addDoc(null, tutor));
+          return this.message("the tutorial, as a scratch buffer: edit it as you like, nothing is saved");
+        case "keys": {
+          const keys = this.keymaps();
+          this.show(this.active, this.addDoc(null, keysReference(keys.normal, keys.insert)));
+          return this.message("every key binding, as a scratch buffer");
+        }
       }
     } catch (err) {
       this.message(String(err), "error");
@@ -2208,6 +2298,7 @@ class App implements Host {
     else if (key === "0") action = () => this.zoom("reset");
     else if (key === "o") action = () => this.openFile();
     else if (key === "e" && e.shiftKey) action = () => this.exportDocx();
+    else if (key === "p" && e.shiftKey && !document.getElementById("picker")) action = () => this.commandPalette();
     if (!action) return;
     e.preventDefault();
     e.stopPropagation();
@@ -2231,7 +2322,19 @@ if (initial) await app.openPath(initial).catch((e) => app.message(String(e), "er
 else if (recovered) app.replace(app.active, recovered);
 app.view.focus();
 if (startupErrors.length) app.message(startupErrors.join("; "), "error");
-else reportSkippedKeys(skippedKeys);
+else if (!reportSkippedKeys(skippedKeys)) welcome();
+
+/** On the first start: where to begin, for those new to modal editing. */
+function welcome() {
+  const KEY = "markmode.welcomed";
+  try {
+    if (!config.hints || localStorage.getItem(KEY)) return;
+    localStorage.setItem(KEY, "1");
+  } catch {
+    return;
+  }
+  app.message("Welcome to Markmode. Keys are commands in normal mode (NOR): i to type, Esc to stop, Space ? to find a command, :tutor to learn the keys");
+}
 
 /** Reads an image; one :images-clean! cleaned up comes back when a link to it is shown again. */
 async function readImage(path: string): Promise<Uint8Array> {
@@ -2296,16 +2399,17 @@ function reviewHint(changes: number): string {
 }
 
 /** Says once which Helix bindings were left out, and again only when that changes. */
-function reportSkippedKeys(skipped: string[]) {
+function reportSkippedKeys(skipped: string[]): boolean {
   const KEY = "markmode.skipped-keys";
   const list = skipped.join("; ");
   try {
-    if (localStorage.getItem(KEY) === list) return;
+    if (localStorage.getItem(KEY) === list) return false;
     localStorage.setItem(KEY, list);
   } catch {
     // Said every time, then.
   }
   if (list) app.message(`skipped bindings using commands this editor lacks (${list}); :config-open lists them`);
+  return !!list;
 }
 
 // Exposed for debugging from the devtools console, and for the browser tests.

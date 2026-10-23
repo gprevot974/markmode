@@ -188,4 +188,87 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
     };
   });
   check("ge shows a wrapped last line down to its end, cursor still in view", end.rows > 3 && end.endShown && end.cursorShown, end);
+
+  // Getting started: the welcome on the first start only, the hint in an
+  // empty buffer and after a key doing nothing, the command palette, :tutor and :keys.
+  const message = () => ev(() => document.getElementById("message")!.textContent!);
+  const pickerTitle = () => ev(() => document.querySelector("#picker .pk-title")?.textContent ?? null);
+  await ev(() => localStorage.removeItem("markmode.welcomed"));
+  await restart();
+  check("a welcome on the first start", (await message()).startsWith("Welcome to Markmode"), await message());
+  await restart();
+  check("no welcome after it", !(await message()).startsWith("Welcome"), await message());
+  await type("Q");
+  check("a key doing nothing in normal mode says how to type", (await message()).startsWith("Q does nothing in normal mode"), await message());
+  await type(":new");
+  await press("Enter");
+  const hint = () => ev(() => [...document.querySelectorAll(".window.active .empty-hint > span")].filter((e) => (e as HTMLElement).offsetParent).map((e) => e.className));
+  check("an empty buffer shows the normal mode hint", (await hint()).join() === "hint-normal", await hint());
+  await type("i");
+  check("and the insert mode one in insert mode", (await hint()).join() === "hint-insert", await hint());
+  await type("x");
+  check("typing hides it", (await hint()).length === 0, await hint());
+  await press("Escape");
+
+  await type(":new");
+  await press("Enter");
+  await type(":hints off");
+  await press("Enter");
+  const settingsFile = () => ev(() => Object.entries(sessionStorage).find(([k]) => k.endsWith("markmode/config.toml"))?.[1] ?? "");
+  check(":hints off hides the hint, in the settings", (await hint()).length === 0 && /^hints = false$/m.test(await settingsFile()), await settingsFile());
+  await type(":hints");
+  await press("Enter");
+  check(":hints toggles them back on", (await hint()).join() === "hint-normal" && /^hints = true$/m.test(await settingsFile()));
+  await type(" ?");
+  check("space ? opens the command palette", (await pickerTitle()) === "commands");
+  await type("file pick");
+  const found = await ev(() => [...document.querySelectorAll("#picker .pk-row")].slice(0, 1).map((r) => [r.querySelector(".pk-text")!.textContent, r.querySelector(".pk-detail")!.textContent]));
+  check("the palette finds a command by what it does, with its keys", found[0]?.[0] === "Open file picker" && found[0]?.[1] === "Space f", found);
+  await press("Enter");
+  await page.waitForTimeout(200);
+  check("Enter runs it", (await pickerTitle()) !== "commands" && (await pickerTitle()) !== null, await pickerTitle());
+  await press("Escape");
+  await type("i");
+  await press("Meta+Shift+KeyP");
+  check("Cmd-Shift-P opens it in insert mode too", (await pickerTitle()) === "commands");
+  await type("next occurrence of char");
+  await press("Enter");
+  check("a command reading a character waits for it, in normal mode", (await ev(() => document.getElementById("pending")!.textContent)) === "f" && (await ev(() => document.querySelector(".window.active .sl-mode")!.textContent)) === "NOR");
+  await press("Escape");
+  await type(":help");
+  await press("Enter");
+  await type("export style default");
+  await press("Enter");
+  check("a command taking an argument goes to the command line", (await ev(() => (document.getElementById("prompt-input") as HTMLInputElement).value)) === "export-style-default ");
+  await press("Escape");
+
+  await type(":tutor");
+  await press("Enter");
+  check(":tutor opens the tutorial", (await ev(() => app.view.state.doc.line(1).text)) === "# Markmode tutor");
+  await type(":keys");
+  await press("Enter");
+  const keysDoc = await ev(() => app.view.state.doc.toString());
+  check(":keys lists the bindings", keysDoc.startsWith("# Keys") && keysDoc.includes("### Space\n") && keysDoc.includes("### Space w, Ctrl-w: Window") && keysDoc.includes("Open command palette"));
+
+  // A heading's preview paints rendered, though far past the part of the
+  // document parsed when its state was made (the rest comes in the background).
+  await type(" s");
+  await page.waitForTimeout(200);
+  await page.keyboard.press("PageDown");
+  const rendered = await ev(
+    () =>
+      new Promise<number | null>((resolve) => {
+        const start = performance.now();
+        const tick = () => {
+          const lines = [...document.querySelectorAll(".pk-preview .cm-line")];
+          const raw = lines.some((l) => !l.classList.contains("pk-current") && /^(#{1,6} |\|)/.test(l.textContent!));
+          if (lines.length && !raw) return resolve(performance.now() - start);
+          if (performance.now() - start > 2000) return resolve(null);
+          requestAnimationFrame(tick);
+        };
+        tick();
+      }),
+  );
+  check("a heading's preview far down the document is rendered at once", rendered !== null && rendered < 60, rendered);
+  await press("Escape");
 }

@@ -72,6 +72,10 @@ export interface Host {
   prompt(label: string, opts: Omit<PromptOptions, "label">): void;
   runTypable(cmdline: string): Promise<void>;
   commandLine(): void;
+  /** `space ?`: every command and key binding, searchable, to run one. */
+  commandPalette(): void;
+  /** A key bound to nothing was pressed in normal mode: text typed in the wrong mode, likely. */
+  unboundKey(key: string): void;
   clipboardRead(): Promise<string>;
   clipboardWrite(text: string): Promise<void>;
   filePicker(inCurrentDir: boolean): void;
@@ -926,6 +930,7 @@ export const commands: Record<string, Command> = {
   open_below: openLine(true),
   open_above: openLine(false),
   command_mode: ({ host }) => host.commandLine(),
+  command_palette: ({ host }) => host.commandPalette(),
 
   // Motions
   move_char_left: remember(moveChar(-1)),

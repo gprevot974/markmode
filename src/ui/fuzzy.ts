@@ -1,8 +1,9 @@
 // Fuzzy matching for the pickers, in the spirit of fzf (Helix uses nucleo):
 // the pattern's characters must appear in order; matches at the start of a
 // word or path segment, and runs of consecutive matches, score higher.
-// Space-separated patterns must all match. Smart case: an uppercase letter in
-// a pattern makes that pattern case-sensitive.
+// Space-separated patterns must all match, and score higher in the order
+// typed. Smart case: an uppercase letter in a pattern makes that pattern
+// case-sensitive.
 
 export interface Match {
   score: number;
@@ -18,6 +19,8 @@ const BONUS_CAMEL = 7;
 const BONUS_CONSECUTIVE = 5;
 const GAP_START = -3;
 const GAP_EXTEND = -1;
+// Each pattern matching after the one before it, as words are typed in order.
+const BONUS_ORDER = 4;
 
 function bonusAt(text: string, i: number): number {
   if (i === 0) return BONUS_START;
@@ -69,11 +72,14 @@ export function fuzzyMatch(pattern: string, text: string): Match | null {
   const terms = pattern.split(/\s+/).filter(Boolean);
   if (!terms.length) return { score: 0, indices: [] };
   let score = 0;
+  let last = -1;
   const indices = new Set<number>();
   for (const term of terms) {
     const m = matchTerm(term, text);
     if (!m) return null;
     score += m.score;
+    if (m.indices[0] > last && last >= 0) score += BONUS_ORDER;
+    last = m.indices[0];
     for (const i of m.indices) indices.add(i);
   }
   return { score, indices: [...indices].sort((a, b) => a - b) };

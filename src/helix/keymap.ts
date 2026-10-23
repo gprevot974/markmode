@@ -210,6 +210,7 @@ export const normalKeys: KeyTrie = {
     P: "paste_clipboard_before",
     R: "replace_selections_with_clipboard",
     e: ":export-docx",
+    "?": "command_palette",
   },
 };
 
