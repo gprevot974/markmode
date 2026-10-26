@@ -4,7 +4,7 @@
 # The release workflow sets the version and checksum on each release.
 cask "markmode" do
   version "0.1.0"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "ad684c78a017943d89a70dc914887ea45ef46ef91cef3c3266cebbaf9eb3eb79"
 
   url "https://github.com/gprevot974/markmode/releases/download/v#{version}/Markmode_#{version}_universal.dmg"
   name "Markmode"
