@@ -5,12 +5,15 @@ description: A document to show the looks of some markdown elements
 ---
 
 # Markmode Sample
-
 ## A tour of what the live preview renders
+
+### A level three header
+
+#### And level four
 
 This paragraph has **bold text**, *italic text*, `inline code`, ~~struck text~~ and a [link to Helix](https://helix-editor.com). Move the cursor onto a line to see its raw markdown; move away and it renders again.
 
-**Label paragraphs** open with bold, which the docx export colors as a mini-heading.
+**Label paragraphs** open with bold, which the docx export colors as a {==mini-heading.==}{>>Along with a comment to be addressed<<}
 
 ### Lists
 
@@ -21,8 +24,7 @@ This paragraph has **bold text**, *italic text*, `inline code`, ~~struck text~~ 
 - [x] A finished task
 
 1. Numbered item one
-2. Numbered item two
-3. Numbered item three
+2. Numbered item three, now reworded
 
 ### A table
 
