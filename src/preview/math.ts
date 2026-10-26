@@ -7,6 +7,7 @@ import type { MarkdownConfig } from "@lezer/markdown";
 import { type EditorState, type Range as DecoRange, StateField } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import { rebuildNow } from "./blockRefresh.ts";
 
 const DOLLAR = 36;
 
@@ -145,8 +146,8 @@ function buildBlocks(state: EditorState): DecorationSet {
 export const mathBlocks = StateField.define<DecorationSet>({
   create: buildBlocks,
   update(deco, tr) {
-    if (tr.docChanged || tr.selection || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return buildBlocks(tr.state);
-    return deco;
+    if (rebuildNow(tr, true)) return buildBlocks(tr.state);
+    return tr.docChanged ? deco.map(tr.changes) : deco;
   },
   provide: (f) => EditorView.decorations.from(f),
 });

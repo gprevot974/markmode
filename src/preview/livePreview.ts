@@ -21,6 +21,7 @@ import { PROPERTIES } from "../frontmatter.ts";
 import { documentPath, imageUrl } from "../images.ts";
 import { footnoteLabel, footnoteNumbers } from "./footnoteSyntax.ts";
 import { MathWidget, mathBlocks, texOf } from "./math.ts";
+import { blockRefresher, rebuildNow } from "./blockRefresh.ts";
 
 /** Every line rendered, the selection's too: a document only read, as a picker's preview. */
 export const renderAll = Facet.define<boolean, boolean>({ combine: (values) => values.some(Boolean) });
@@ -641,15 +642,8 @@ function buildTables(state: EditorState): DecorationSet {
 const tablePreview = StateField.define<DecorationSet>({
   create: buildTables,
   update(deco, tr) {
-    if (
-      tr.docChanged ||
-      tr.selection ||
-      syntaxTree(tr.startState) !== syntaxTree(tr.state) ||
-      tr.effects.some((e) => e.is(setPreviewLabels) || e.is(setTotalRows))
-    ) {
-      return buildTables(tr.state);
-    }
-    return deco;
+    if (rebuildNow(tr, true) || tr.effects.some((e) => e.is(setPreviewLabels) || e.is(setTotalRows))) return buildTables(tr.state);
+    return tr.docChanged ? deco.map(tr.changes) : deco;
   },
   provide: (f) => EditorView.decorations.from(f),
 });
@@ -699,10 +693,10 @@ function buildGutterClasses(state: EditorState): RangeSet<GutterMarker> {
 const gutterClasses = StateField.define<RangeSet<GutterMarker>>({
   create: buildGutterClasses,
   update(marks, tr) {
-    if (tr.docChanged || syntaxTree(tr.startState) !== syntaxTree(tr.state)) return buildGutterClasses(tr.state);
-    return marks;
+    if (rebuildNow(tr, false)) return buildGutterClasses(tr.state);
+    return tr.docChanged ? marks.map(tr.changes) : marks;
   },
   provide: (f) => gutterLineClass.from(f),
 });
 
-export const livePreview = [previewLabels, totalRows, inlinePreview, tablePreview, mathBlocks, gutterClasses];
+export const livePreview = [previewLabels, totalRows, inlinePreview, tablePreview, mathBlocks, gutterClasses, blockRefresher];
