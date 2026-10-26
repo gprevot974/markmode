@@ -9,6 +9,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { message as messageDialog, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import sample from "../examples/sample.md?raw";
 import chart from "../examples/chart.svg?raw";
 import type { DiskFormat } from "./fileformat.ts";
@@ -24,7 +25,8 @@ export interface Backend {
   readBytes(path: string): Promise<Uint8Array>;
   pickOpen(): Promise<string | null>;
   pickSave(defaultPath: string, ext: "md" | "docx" | "html"): Promise<string | null>;
-  initialFile(): Promise<string | null>;
+  /** The files passed on the command line, by `mde` or from Finder before the front end asked for them. */
+  initialFiles(): Promise<string[]>;
   watch(path: string): Promise<void>;
   unwatch(path: string): Promise<void>;
   onFileChanged(cb: (path: string) => void): void;
@@ -95,6 +97,10 @@ export interface Backend {
   /** The text the file's changes are reviewed against (see history.rs); null when there is none yet. */
   historyBaseline(path: string): Promise<string | null>;
   historySetBaseline(path: string, text: string): Promise<void>;
+  /** The version of a newer release, from GitHub; null when this one is the latest. */
+  checkUpdate(): Promise<string | null>;
+  /** Downloads and installs the newer release, which starts on the next launch; its version, or null when there is none. */
+  installUpdate(): Promise<string | null>;
 }
 
 /** A drag from Finder: the files (on enter and drop) and where the pointer is, in CSS pixels. */
@@ -130,6 +136,9 @@ const FILTERS = {
   html: [{ name: "Web page", extensions: ["html"] }],
 };
 
+/** The newer release the last check found, for installUpdate. */
+let update: Update | null = null;
+
 const tauriBackend: Backend = {
   readText: (path) => invoke("read_text", { path }),
   writeText: (path, contents, format) => invoke("write_text", { path, contents, format }),
@@ -141,7 +150,7 @@ const tauriBackend: Backend = {
     return typeof picked === "string" ? picked : null;
   },
   pickSave: (defaultPath, ext) => saveDialog({ defaultPath, filters: FILTERS[ext] }),
-  initialFile: () => invoke("take_initial_file"),
+  initialFiles: () => invoke("take_initial_files"),
   watch: (path) => invoke("watch_file", { path }),
   unwatch: (path) => invoke("unwatch_file", { path }),
   onFileChanged(cb) {
@@ -218,6 +227,16 @@ const tauriBackend: Backend = {
   historyRead: (path, id) => invoke("history_read", { path, id }),
   historyBaseline: (path) => invoke("history_baseline", { path }),
   historySetBaseline: (path, text) => invoke("history_set_baseline", { path, text }),
+  async checkUpdate() {
+    update = await check();
+    return update?.version ?? null;
+  },
+  async installUpdate() {
+    update ??= await check();
+    if (!update) return null;
+    await update.downloadAndInstall();
+    return update.version;
+  },
 };
 
 // ── Browser stand-in ─────────────────────────────────────────────────────────
@@ -300,7 +319,7 @@ const browserBackend: Backend = {
       input.click();
     }),
   pickSave: async (defaultPath) => prompt("Save as", defaultPath),
-  initialFile: async () => "/sample.md",
+  initialFiles: async () => ["/sample.md"],
   watch: async (path) => void watched.add(path),
   unwatch: async (path) => void watched.delete(path),
   onFileChanged(cb) {
@@ -428,6 +447,8 @@ const browserBackend: Backend = {
     if (!found) throw new Error(`no version ${id} of ${path}`);
     return found.text;
   },
+  checkUpdate: async () => null,
+  installUpdate: async () => null,
 };
 
 

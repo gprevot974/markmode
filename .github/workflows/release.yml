@@ -1,0 +1,56 @@
+name: Release
+
+# Pushing a version tag (v0.2.0) builds the app for Apple Silicon and Intel,
+# publishes a GitHub release with the .dmg and the files the updater reads,
+# and points the Homebrew cask at it. See docs/releasing.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag is the app's version
+        run: test "${GITHUB_REF_NAME#v}" = "$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # Signed with the updater's key (not Apple's: the app is only signed
+      # ad hoc), so :update installs only builds made here.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Markmode ${{ github.ref_name }}
+          releaseBody: "macOS only, for Apple Silicon and Intel. Not notarized: see Install in the README for opening it the first time."
+          releaseDraft: false
+          args: --target universal-apple-darwin --config src-tauri/tauri.release.conf.json
+      - name: Point the Homebrew cask at the release
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          curl -fsSL -o Markmode.dmg "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/Markmode_${version}_universal.dmg"
+          sha=$(shasum -a 256 Markmode.dmg | cut -d' ' -f1)
+          git fetch origin main
+          git checkout main
+          sed -i '' -e "s/^  version \".*\"/  version \"${version}\"/" -e "s/^  sha256 \".*\"/  sha256 \"${sha}\"/" Casks/markmode.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Point the Homebrew cask at ${GITHUB_REF_NAME}"
+          git push origin main

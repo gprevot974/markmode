@@ -57,6 +57,7 @@ export const typables: Typable[] = [
   { name: "goto", aliases: ["g"], doc: "Goto line number" },
   { name: "help", aliases: ["h"], doc: "Open the command palette: every command and key, searchable by what it does (also Space ?, Cmd-Shift-P)" },
   { name: "tutor", aliases: [], doc: "Open the tutorial: modal editing, moving, selecting, saving and exporting, to practice on as you read" },
+  { name: "update", aliases: [], doc: "Download and install the latest release of Markmode, which starts on the next launch" },
   { name: "keys", aliases: [], doc: "Open the reference of every key binding, with your remaps" },
   { name: "hints", aliases: [], doc: "Turn the hints for getting started on or off (:hints off), in your settings; without an argument, toggles them", args: "on-off" },
 ];

@@ -29,8 +29,9 @@ struct Watched {
 
 #[derive(Default)]
 struct AppState {
-    /// File passed on the command line or via Finder before the front end asked for it.
-    pending_open: Mutex<Option<String>>,
+    /// Files passed on the command line, by `mde` or via Finder before the
+    /// front end asked for them; None once it has.
+    pending_open: Mutex<Option<Vec<String>>>,
     watcher: Mutex<Option<RecommendedWatcher>>,
     watched: Arc<Mutex<Vec<Watched>>>,
     watched_dirs: Mutex<HashSet<PathBuf>>,
@@ -154,8 +155,19 @@ fn home_dir() -> String {
 }
 
 #[tauri::command]
-fn take_initial_file(state: State<AppState>) -> Option<String> {
-    state.pending_open.lock().unwrap().take()
+fn take_initial_files(state: State<AppState>) -> Vec<String> {
+    state.pending_open.lock().unwrap().take().unwrap_or_default()
+}
+
+/// The file an opened URL names: a file URL from Finder or `open`, or
+/// `markmode://open?path=...` from `mde`, which also names files that don't
+/// exist yet (`open` refuses those).
+fn opened_path(url: &tauri::Url) -> Option<String> {
+    match url.scheme() {
+        "file" => url.to_file_path().ok().map(|p| p.to_string_lossy().into_owned()),
+        "markmode" => url.query_pairs().find(|(k, _)| k == "path").map(|(_, v)| v.into_owned()),
+        _ => None,
+    }
 }
 
 /// Files under `root` for the file picker, relative to it. Like Helix, hidden
@@ -369,11 +381,13 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(AppState::default())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(AppState { pending_open: Mutex::new(Some(Vec::new())), ..Default::default() })
         .manage(recovery::Recovery::default())
         .setup(|app| {
-            if let Some(arg) = std::env::args().skip(1).find(|a| !a.starts_with('-')) {
-                *app.state::<AppState>().pending_open.lock().unwrap() = Some(absolute(&arg));
+            let args = std::env::args().skip(1).filter(|a| !a.starts_with('-'));
+            if let Some(paths) = app.state::<AppState>().pending_open.lock().unwrap().as_mut() {
+                paths.extend(args.map(|a| absolute(&a)));
             }
             // The stock Quit item terminates the app on the spot. This one asks
             // the front end, which checks for unsaved buffers first.
@@ -402,7 +416,7 @@ pub fn run() {
             write_text,
             write_bytes,
             read_bytes,
-            take_initial_file,
+            take_initial_files,
             watch_file,
             unwatch_file,
             list_dir,
@@ -440,14 +454,38 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|_app, _event| {
-        // Files opened from Finder ("Open With", double-click, `open -a`).
+        // Files opened from Finder ("Open With", double-click, `open -a`) or
+        // by `mde`. At launch they come before the front end listens, so they
+        // are kept for it to take; once it has, it opens them as they come.
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         if let tauri::RunEvent::Opened { urls } = &_event {
-            if let Some(path) = urls.iter().find_map(|u| u.to_file_path().ok()) {
-                let path = path.to_string_lossy().into_owned();
-                *_app.state::<AppState>().pending_open.lock().unwrap() = Some(path.clone());
-                let _ = _app.emit("open-file", path);
+            let state = _app.state::<AppState>();
+            let mut pending = state.pending_open.lock().unwrap();
+            for path in urls.iter().filter_map(opened_path) {
+                match pending.as_mut() {
+                    Some(paths) => paths.push(path),
+                    None => drop(_app.emit("open-file", path)),
+                }
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn path_of(url: &str) -> Option<String> {
+        opened_path(&tauri::Url::parse(url).unwrap())
+    }
+
+    #[test]
+    fn opened_urls_name_files() {
+        assert_eq!(path_of("file:///notes/a%20b.md").as_deref(), Some("/notes/a b.md"));
+        // As `mde` writes them: every byte percent-encoded.
+        assert_eq!(path_of("markmode://open?path=%2f%61%20%23%3f%26.md").as_deref(), Some("/a #?&.md"));
+        assert_eq!(path_of("markmode://open?path=/caf%C3%A9.md").as_deref(), Some("/café.md"));
+        assert_eq!(path_of("markmode://open"), None);
+        assert_eq!(path_of("https://example.com/a.md"), None);
+    }
 }

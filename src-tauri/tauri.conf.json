@@ -23,10 +23,18 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": ["app", "dmg"],
+    "resources": { "resources/mde": "mde" },
+    "macOS": { "signingIdentity": "-" },
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "fileAssociations": [
       { "ext": ["md", "markdown"], "name": "Markdown", "role": "Editor", "mimeType": "text/markdown" }
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY3REI2RTA5MTRGNTczREUKUldUZWMvVVVDVzdiWi9KcklUcHd6S096MlNXa0ZpdGdqclN6ZVR6L29sOWM0bTVIQW9xMnVNN1cK",
+      "endpoints": ["https://github.com/gprevot974/markmode/releases/latest/download/latest.json"]
+    }
   }
 }

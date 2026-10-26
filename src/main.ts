@@ -1181,6 +1181,11 @@ class App implements Host {
           await this.openPath(path);
           return this.message(config.readHelixConfig ? ":config-reload applies changes" : "not read: read-helix-config = false in your settings");
         }
+        case "update": {
+          this.message("update: downloading...");
+          const version = await backend.installUpdate();
+          return this.message(version ? `Markmode ${version} installed: it starts on the next launch` : "update: this is the latest release");
+        }
         case "config-reload":
           return await this.reloadConfig();
         case "zoom": {
@@ -2317,12 +2322,23 @@ setImageReader(readImage);
 const app = new App();
 await app.init();
 const recovered = await app.restoreRecovered();
-const initial = await backend.initialFile().catch(() => null);
-if (initial) await app.openPath(initial).catch((e) => app.message(String(e), "error"));
-else if (recovered) app.replace(app.active, recovered);
+const initial = await backend.initialFiles().catch((): string[] => []);
+// Opened in order, the first one shown, as `hx a.md b.md` does.
+for (const path of [...initial, ...initial.slice(0, 1)]) await app.openPath(path).catch((e) => app.message(String(e), "error"));
+if (!initial.length && recovered) app.replace(app.active, recovered);
 app.view.focus();
 if (startupErrors.length) app.message(startupErrors.join("; "), "error");
 else if (!reportSkippedKeys(skippedKeys)) welcome();
+if (config.checkForUpdates) void checkForUpdate();
+
+/**
+ * A newer release, said in the statusline unless it already says something
+ * (the welcome, a file changed outside); quietly nothing when offline.
+ */
+async function checkForUpdate() {
+  const version = await backend.checkUpdate().catch(() => null);
+  if (version && !$("message").textContent) app.message(`Markmode ${version} is available: :update installs it`);
+}
 
 /** On the first start: where to begin, for those new to modal editing. */
 function welcome() {

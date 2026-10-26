@@ -10,6 +10,10 @@ export const config = {
   // Read ~/.config/helix/config.toml and use its theme, options and keys.
   readHelixConfig: true,
 
+  // Look for a newer release on GitHub at startup (`check-for-updates`);
+  // `:update` installs it.
+  checkForUpdates: true,
+
   // "auto" is Entre-Deux following the macOS appearance: entre-deux when dark,
   // entre-deux-light when light; "dark" or "light" pins one; "kanagawa" is
   // Kanagawa the same way; any other name is a Helix theme. `:theme`

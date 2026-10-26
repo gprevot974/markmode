@@ -76,7 +76,15 @@ Roughly in order of value:
 
 ## 5. Distribution
 
-*Partly done: the `.md` file associations and "Open With" work.*
+*Done but for notarizing, which takes the paid Apple Developer Program: see
+"Install" in the README and [releasing.md](releasing.md). The app is signed ad
+hoc, and the README and the cask's caveat say how to open it the first time.
+Updates come from GitHub releases, signed with the updater's own key; `:update`
+installs them rather than an automatic install, so nothing changes under an
+open buffer. The cask lives in this repository (`Casks/`), tapped by URL, as
+Homebrew's own cask repository no longer takes apps Gatekeeper blocks. `mde`
+opens files by a `markmode://` URL, since `open -a` refuses files that don't
+exist yet.*
 
 - Sign and notarize the macOS build; automatic updates with
   `tauri-plugin-updater`.
@@ -92,7 +100,8 @@ Roughly in order of value:
 
 ## 6. Onboarding
 
-*Done, but for the README's GIF: see "Getting started" in the README. The
+*Done: see "Getting started" in the README, and its GIF (`npm run demo-gif`
+records it again). The
 palette (`space ?`, as in Helix, and Cmd-Shift-P) lists typable commands and
 key bindings by their docs; `:tutor` opens the tutorial as a scratch buffer,
 `:keys` the bindings in effect. The welcome shows once, on the first start;

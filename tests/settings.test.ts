@@ -26,11 +26,13 @@ describe("settings", () => {
   it("applies this editor's own options over the Helix ones", () => {
     applySettings({
       "read-helix-config": false,
+      "check-for-updates": false,
       editor: { spellcheck: false, "text-width": 72 },
       images: { folder: "./img/" },
       keys: { normal: { space: { w: ":w" } } },
     });
     expect(config.readHelixConfig).toBe(false);
+    expect(config.checkForUpdates).toBe(false);
     expect(config.spellcheck).toBe(false);
     expect(config.textWidth).toBe(72);
     expect(config.imageFolder).toBe("img");

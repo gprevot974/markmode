@@ -21,6 +21,7 @@ export function readsHelixConfig(settings: Table | null): boolean {
 export function applySettings(settings: Table): string[] {
   config.readHelixConfig = readsHelixConfig(settings);
   const skipped = applyHelixConfig(settings);
+  if (typeof settings["check-for-updates"] === "boolean") config.checkForUpdates = settings["check-for-updates"];
   const editor = isTable(settings.editor) ? settings.editor : {};
   if (typeof editor.spellcheck === "boolean") config.spellcheck = editor.spellcheck;
   if (typeof editor.hints === "boolean") config.hints = editor.hints;
@@ -35,6 +36,9 @@ export const SETTINGS_TEMPLATE = `# Markmode settings. Uncomment a line to chang
 
 # Read your Helix config.toml: its theme, editor options and key remaps.
 # read-helix-config = true
+
+# Look for a newer release on GitHub at startup; :update installs it.
+# check-for-updates = true
 
 # "auto" follows the macOS appearance (entre-deux when dark, entre-deux-light
 # when light); "dark" or "light" pins one; "kanagawa" does the same with

@@ -1,0 +1,40 @@
+#!/bin/sh
+# mde: opens files in Markmode from the terminal, as `hx` does in Helix:
+# `mde notes.md draft.md`. Files that don't exist yet open as new ones,
+# written on the first save. Without files, it brings Markmode up.
+#
+# The files go as markmode://open?path=... URLs rather than to `open -a`,
+# which refuses files that don't exist and, when the app is already running,
+# drops `--args`.
+
+set -e
+
+case "$1" in
+  -h | --help)
+    echo "usage: mde [file...]"
+    exit 0
+    ;;
+esac
+
+[ $# -eq 0 ] && exec open -b dev.gprevot.markmode
+
+first=1
+for f in "$@"; do
+  if [ "$first" ]; then
+    set --
+    first=
+  fi
+  dir=$(dirname -- "$f")
+  if abs=$(cd -- "$dir" 2>/dev/null && pwd); then
+    path=${abs%/}/$(basename -- "$f")
+  else
+    case "$f" in
+      /*) path=$f ;;
+      *) path=$PWD/$f ;;
+    esac
+  fi
+  # Every byte percent-encoded, so spaces, #, ? and & in names come through.
+  encoded=$(printf %s "$path" | od -An -v -tx1 | tr -d ' \n' | sed 's/../%&/g')
+  set -- "$@" "markmode://open?path=$encoded"
+done
+exec open "$@"

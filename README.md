@@ -6,6 +6,8 @@ The idea: LLMs write markdown, people expect Word. Open the file an LLM is
 working on, read it rendered, edit it the Helix way, and export a formatted
 `.docx` when it goes to other humans.
 
+![Leaving a comment for an agent, reviewing its edits inline, and exporting to Word](docs/demo.gif)
+
 - **Helix editing**: selection-first motions ported from helix-core, plus multiple
   cursors, text objects, surround, jump labels, registers and counts. Your
   `~/.config/helix/config.toml` applies: key remaps, theme and editor options
@@ -25,6 +27,50 @@ working on, read it rendered, edit it the Helix way, and export a formatted
   in an export style: built in, your own or the project's, as TOML files you
   can edit here, with the document shown in it as you do (see [Export](#export)).
 
+## Install
+
+Markmode runs on macOS only for now, on Apple Silicon and Intel: spell-check
+uses the macOS spell checker, and paths and the light and dark appearance
+follow macOS conventions.
+
+With [Homebrew](https://brew.sh), which also puts `mde` on your `PATH`:
+
+```bash
+brew tap gprevot974/markmode https://github.com/gprevot974/markmode
+```
+
+```bash
+brew install --cask markmode
+```
+
+Or download the `.dmg` from the
+[latest release](https://github.com/gprevot974/markmode/releases/latest) and
+drag Markmode to Applications.
+
+The app is not notarized by Apple (that takes a paid developer account), so
+macOS blocks it the first time: open System Settings → Privacy & Security and
+click Open Anyway, or clear the download's quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Markmode.app
+```
+
+New releases are announced in the message line at startup, and `:update`
+installs them; they are signed, so `:update` installs only builds published
+here. `check-for-updates = false` in your [settings](#settings) turns the check
+off.
+
+### From the terminal
+
+`mde notes.md` opens a file in Markmode, as `hx` does in Helix; several files
+open as buffers, the first one shown, and a file that doesn't exist yet opens
+as a new one, written on the first save. Without files, `mde` brings Markmode
+up. Homebrew installs it; with the `.dmg`, link it yourself:
+
+```bash
+ln -s /Applications/Markmode.app/Contents/Resources/mde /usr/local/bin/mde
+```
+
 ## Getting started
 
 New to Helix, or to modal editing? Keys are commands in normal mode (`NOR` in
@@ -42,17 +88,16 @@ writing `hints = false` under `[editor]` in your [settings](#settings), and
 ```bash
 npm install
 npm run tauri dev        # development, with hot reload
-npm run tauri build      # builds release/bundle/macos/Markmode.app in your Cargo target dir
+npm run tauri build      # builds Markmode.app and a .dmg under release/bundle/ in your Cargo target dir
 ```
 
-Open a file from the terminal with the built app (your `CARGO_TARGET_DIR` is
-`~/Code/cargo-target`; without it the bundle lands in `src-tauri/target/`):
-
-```bash
-open -a ~/Code/cargo-target/release/bundle/macos/Markmode.app notes.md
-```
-
-Copy `Markmode.app` to `/Applications` to get "Open With → Markmode" in Finder.
+Your `CARGO_TARGET_DIR` is `~/Code/cargo-target`; without it the bundle lands
+in `src-tauri/target/`. The `.dmg` step lays out its window through Finder, so
+the terminal needs permission to control Finder (System Settings → Privacy &
+Security → Automation); `npm run tauri build -- --bundles app` skips it. Copy
+`Markmode.app` to `/Applications` to get "Open With → Markmode" in Finder, and
+`mde` (see [From the terminal](#from-the-terminal)). Releases are built by CI
+from a version tag: see [docs/releasing.md](docs/releasing.md).
 
 `npm run dev` runs the editor alone in a browser, with an in-memory sample file.
 That's useful when working on the editor itself.
@@ -90,6 +135,7 @@ node scripts/build-docx.ts input.md [output.docx] [--style name]
 | `:export-preview`, `:export-help` | show documents in their export style; the export reference |
 | `:help`, `:tutor`, `:keys` | the command palette (`space ?`, ⌘⇧P); the tutorial; every key binding |
 | `:hints [on\|off]` | the hints for getting started, in your settings (toggles without an argument) |
+| `:update` | install the latest release, which starts on the next launch (see [Install](#install)) |
 | `:<n>` | go to line *n* |
 
 macOS shortcuts also work: ⌘S save, ⌘O open, ⌘⇧E export, ⌘⇧P command palette, ⌘= and ⌘- zoom in and
@@ -304,6 +350,7 @@ config.toml, and applies over it:
 
 ```toml
 read-helix-config = true   # read ~/.config/helix/config.toml (below)
+check-for-updates = true   # look for a newer release at startup (see Privacy)
 theme = "auto"             # or { light = "...", dark = "..." }, or a Helix theme
 
 [editor]
@@ -620,9 +667,12 @@ src/helixConfig.ts  reading ~/.config/helix/config.toml
 src/fileformat.ts line endings and encodings
 src/backend.ts    files, dialogs, clipboard (Tauri, or an in-memory stand-in in a browser)
 src-tauri/        the Rust shell: file I/O, the file watcher, crash recovery, version history, spelling
+src-tauri/resources/mde  the terminal launcher, shipped inside the app
+Casks/            the Homebrew cask
 tests/            unit tests (vitest), and tests/e2e: the editor in Chrome
-scripts/          the command-line export; docs.ts writes the export reference into this README
-docs/             the roadmap
+scripts/          the command-line export; docs.ts writes the export reference into this README;
+                  demo-gif.ts records docs/demo.gif
+docs/             the roadmap, how to release, the README's GIF
 ```
 
 ## Tests
@@ -647,4 +697,24 @@ the command palette, export styles and the export
 preview, the HTML export, global search, following links, images, footnotes, math, and a
 120,000-line file, with timings. They use the installed Chrome, or
 `CHROME_PATH`. The Rust tests cover encodings, atomic writes, the version
-history and global search. CI runs all three on macOS.
+history, global search and the files `mde` and Finder open. CI runs all three
+on macOS.
+
+## Privacy
+
+Markmode sends nothing about you or your files anywhere. Two things make
+network requests:
+
+- **Remote images.** The preview loads images whose links point to the web,
+  as a browser would, so opening a file can tell those servers your IP
+  address and when the file was opened. Images on disk stay local.
+- **The update check.** At startup the app reads
+  `releases/latest/download/latest.json` from this repository on GitHub, to
+  see whether a newer release exists. `check-for-updates = false` in your
+  settings turns it off; `:update` still works when asked.
+
+Links open in your browser only when you follow them (`gf`).
+
+## License
+
+[MIT](LICENSE).
