@@ -58,6 +58,13 @@ fn write_text(path: String, contents: String, format: Option<files::Format>) -> 
     files::write_atomic(Path::new(&path), &bytes).map_err(|e| format!("{path}: {e}"))
 }
 
+/// Moves (renames) a file; returns where it went (see files::move_file).
+#[tauri::command]
+fn move_file(from: String, to: String, overwrite: bool) -> Result<String, String> {
+    let moved = files::move_file(Path::new(&from), Path::new(&to), overwrite).map_err(|e| format!("{from}: {e}"))?;
+    Ok(moved.to_string_lossy().into_owned())
+}
+
 /// A file's bytes, as binary rather than JSON (images for the preview and the export).
 #[tauri::command]
 async fn read_bytes(path: String) -> Result<tauri::ipc::Response, String> {
@@ -414,6 +421,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_text,
             write_text,
+            move_file,
             write_bytes,
             read_bytes,
             take_initial_files,
@@ -448,6 +456,7 @@ pub fn run() {
             history::history_list,
             history::history_read,
             history::history_set_baseline,
+            history::history_rename,
             history::history_baseline
         ])
         .build(tauri::generate_context!())

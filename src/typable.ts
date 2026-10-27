@@ -19,6 +19,7 @@ export const typables: Typable[] = [
   { name: "quit", aliases: ["q"], doc: "Close the current window; the last one closes the app. :quit! discards unsaved changes" },
   { name: "quit-all", aliases: ["qa"], doc: "Close the app. :quit-all! discards unsaved changes" },
   { name: "open", aliases: ["o", "e", "edit"], doc: "Open a file from disk into the current window. Without a path, shows a file dialog", args: "path" },
+  { name: "move", aliases: ["mv", "rename"], doc: "Move or rename the current file (:move ideas.md, :move drafts/); a name without an extension keeps the file's. :move! replaces a file already there", args: "path" },
   { name: "new", aliases: ["n"], doc: "Create a new scratch buffer" },
   { name: "vsplit", aliases: ["vs"], doc: "Open the file (or the current buffer) in a vertical split", args: "path" },
   { name: "hsplit", aliases: ["hs", "sp"], doc: "Open the file (or the current buffer) in a horizontal split", args: "path" },

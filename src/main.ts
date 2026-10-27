@@ -1101,6 +1101,8 @@ class App implements Host {
           return await this.quitAll(force);
         case "open":
           return arg ? await this.openPath(this.resolve(arg)) : await this.openFile();
+        case "move":
+          return await this.move(doc, arg, force);
         case "new":
           return this.newScratch(this.active);
         case "vsplit":
@@ -1422,6 +1424,37 @@ class App implements Host {
     const settings = this.configDir && target === `${this.configDir}/config.toml`;
     this.message(`written ${basename(target)} (${text.lines} lines)${settings ? ", settings apply on the next start" : ""}`);
     return true;
+  }
+
+  /**
+   * Moves (renames) the buffer's file, unsaved changes staying in the buffer;
+   * its version history goes with it.
+   */
+  async move(doc: Doc, path: string | undefined, force: boolean) {
+    if (!doc.path) return this.message("a scratch buffer has no file to move, use :w <path>", "error");
+    if (!path) return this.message("move: give the new name or path (:move ideas.md)", "error");
+    const from = doc.path;
+    const wanted = this.resolve(path);
+    const ext = /\.[^./]+$/.exec(from)?.[0] ?? "";
+    const open = this.docs.find((d) => d !== doc && d.path && [wanted, wanted + ext, `${wanted}/${basename(from)}`].includes(d.path));
+    if (open) return this.message(`${this.docName(open)} is open in another buffer, close it first`, "error");
+    void backend.unwatch(from);
+    let target: string;
+    try {
+      target = await backend.moveFile(from, wanted, force);
+    } catch (e) {
+      this.watch(from);
+      const exists = String(e).includes("already exists");
+      return this.message(exists ? `${basename(wanted)} already exists, use :move! to replace it` : String(e), "error");
+    }
+    doc.path = target;
+    this.watch(target);
+    await backend.historyRename(from, target).catch((e) => this.message(`version history not moved: ${e}`, "error"));
+    // The recovery copy names the file: it is written again with the new path.
+    this.recovered.delete(doc);
+    this.scheduleRecovery();
+    this.renderAllStatus();
+    this.message(`moved to ${this.docName(doc, true)}`);
   }
 
   /** Writes every modified buffer that has a file; returns whether nothing is left unsaved. */

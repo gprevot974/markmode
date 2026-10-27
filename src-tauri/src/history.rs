@@ -126,6 +126,21 @@ pub fn baseline(root: &Path, path: &str) -> Option<String> {
     fs::read_to_string(dir_for(root, path).join("baseline.md")).ok()
 }
 
+/// Hands the history of `from` over to `to`, for a file that moved; history
+/// kept for an earlier file at `to` gives way to it.
+pub fn rename(root: &Path, from: &str, to: &str) -> io::Result<()> {
+    let old = dir_for(root, from);
+    if !old.exists() || from == to {
+        return Ok(());
+    }
+    let new = dir_for(root, to);
+    if new.exists() {
+        fs::remove_dir_all(&new)?;
+    }
+    fs::rename(&old, &new)?;
+    fs::write(new.join("path"), to)
+}
+
 fn root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("history"))
 }
@@ -148,6 +163,11 @@ pub fn history_read(app: AppHandle, path: String, id: String) -> Result<String, 
 #[tauri::command]
 pub fn history_set_baseline(app: AppHandle, path: String, text: String) -> Result<(), String> {
     set_baseline(&root(&app)?, &path, &text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn history_rename(app: AppHandle, from: String, to: String) -> Result<(), String> {
+    rename(&root(&app)?, &from, &to).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -198,6 +218,23 @@ mod tests {
         add(&root, "/a.md", "one", "saved").unwrap();
         assert_eq!(baseline(&root, "/a.md").as_deref(), Some("seen"));
         assert_eq!(list(&root, "/a.md").len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn history_follows_a_moved_file() {
+        let root = temp_root("rename");
+        add(&root, "/a.md", "one", "saved").unwrap();
+        set_baseline(&root, "/a.md", "seen").unwrap();
+        add(&root, "/b.md", "older file", "saved").unwrap();
+        rename(&root, "/a.md", "/b.md").unwrap();
+        assert!(list(&root, "/a.md").is_empty());
+        let snaps = list(&root, "/b.md");
+        assert_eq!(snaps.len(), 1);
+        assert_eq!(read(&root, "/b.md", &snaps[0].id).unwrap(), "one");
+        assert_eq!(baseline(&root, "/b.md").as_deref(), Some("seen"));
+        assert!(add(&root, "/b.md", "two", "saved").unwrap(), "the moved directory names its new file");
+        rename(&root, "/none.md", "/c.md").unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 

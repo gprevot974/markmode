@@ -20,6 +20,12 @@ export interface Backend {
   readText(path: string): Promise<FileText>;
   /** Writes atomically: a crash midway leaves the old file, never half of the new one. */
   writeText(path: string, contents: string, format?: DiskFormat): Promise<void>;
+  /**
+   * Moves a file and returns where it went: into `to` when that is a folder,
+   * with the file's extension when `to` has none. A file already at `to` is
+   * replaced only with `overwrite`.
+   */
+  moveFile(from: string, to: string, overwrite: boolean): Promise<string>;
   writeBytes(path: string, bytes: Uint8Array): Promise<void>;
   /** A file's bytes: images, for the preview and the export. */
   readBytes(path: string): Promise<Uint8Array>;
@@ -97,6 +103,8 @@ export interface Backend {
   /** The text the file's changes are reviewed against (see history.rs); null when there is none yet. */
   historyBaseline(path: string): Promise<string | null>;
   historySetBaseline(path: string, text: string): Promise<void>;
+  /** Hands the versions kept of a file that moved over to its new path. */
+  historyRename(from: string, to: string): Promise<void>;
   /** The version of a newer release, from GitHub; null when this one is the latest. */
   checkUpdate(): Promise<string | null>;
   /** Downloads and installs the newer release, which starts on the next launch; its version, or null when there is none. */
@@ -142,6 +150,7 @@ let update: Update | null = null;
 const tauriBackend: Backend = {
   readText: (path) => invoke("read_text", { path }),
   writeText: (path, contents, format) => invoke("write_text", { path, contents, format }),
+  moveFile: (from, to, overwrite) => invoke("move_file", { from, to, overwrite }),
   // The bytes go as the request's body, the path in a header (see write_bytes).
   writeBytes: (path, bytes) => invoke("write_bytes", bytes, { headers: { path: encodeURIComponent(path) } }),
   readBytes: async (path) => new Uint8Array(await invoke<ArrayBuffer>("read_bytes", { path })),
@@ -226,6 +235,7 @@ const tauriBackend: Backend = {
   historyList: (path) => invoke("history_list", { path }),
   historyRead: (path, id) => invoke("history_read", { path, id }),
   historyBaseline: (path) => invoke("history_baseline", { path }),
+  historyRename: (from, to) => invoke("history_rename", { from, to }),
   historySetBaseline: (path, text) => invoke("history_set_baseline", { path, text }),
   async checkUpdate() {
     update = await check();
@@ -288,6 +298,20 @@ const browserBackend: Backend = {
     memoryFiles.set(path, contents);
     tabStorage()?.setItem(FILE + path, contents);
     if (watched.has(path)) setTimeout(() => fileChanged(path));
+  },
+  async moveFile(from, to, overwrite) {
+    const text = memoryFiles.get(from);
+    if (text === undefined) throw new Error(`${from}: not found`);
+    const name = from.slice(from.lastIndexOf("/") + 1);
+    const ext = /\.[^.]+$/.exec(name)?.[0] ?? "";
+    if ([...memoryFiles.keys()].some((p) => p.startsWith(`${to}/`))) to = `${to}/${name}`;
+    else if (!/\.[^./]+$/.test(to)) to += ext;
+    if (to !== from && memoryFiles.has(to) && !overwrite) throw new Error(`${from}: ${to} already exists`);
+    memoryFiles.delete(from);
+    tabStorage()?.removeItem(FILE + from);
+    memoryFiles.set(to, text);
+    tabStorage()?.setItem(FILE + to, text);
+    return to;
   },
   // The stand-in's files are text; an SVG file stands in for an image.
   async readBytes(path) {
@@ -440,6 +464,15 @@ const browserBackend: Backend = {
       tabStorage()?.setItem(BASELINE + path, text);
     } catch {
       // Over the storage quota: a large file.
+    }
+  },
+  async historyRename(from, to) {
+    const storage = tabStorage();
+    for (const key of [HISTORY, BASELINE]) {
+      const kept = storage?.getItem(key + from);
+      if (kept == null) continue;
+      storage!.setItem(key + to, kept);
+      storage!.removeItem(key + from);
     }
   },
   async historyRead(path, id) {

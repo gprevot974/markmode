@@ -138,6 +138,50 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     result
 }
 
+/// Moves the file at `from` to `to` and returns where it went: into `to` when
+/// that is a folder, with `from`'s extension when `to` has none. The folders
+/// above it are made. A file already there is replaced only with `overwrite`,
+/// unless it is `from` itself under another case (a case-insensitive disk).
+pub fn move_file(from: &Path, to: &Path, overwrite: bool) -> io::Result<PathBuf> {
+    let mut to = to.to_path_buf();
+    if to.is_dir() {
+        to.push(from.file_name().ok_or_else(|| io::Error::other("no file name"))?);
+    } else if to.extension().is_none() {
+        if let Some(ext) = from.extension() {
+            to.set_extension(ext);
+        }
+    }
+    if !overwrite && fs::symlink_metadata(&to).is_ok() && !same_file(from, &to) {
+        return Err(io::Error::new(ErrorKind::AlreadyExists, format!("{} already exists", to.display())));
+    }
+    if let Some(dir) = to.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    match fs::rename(from, &to) {
+        // Another disk: copy, then remove.
+        Err(e) if e.kind() == ErrorKind::CrossesDevices => {
+            fs::copy(from, &to)?;
+            fs::remove_file(from)?;
+        }
+        result => result?,
+    }
+    Ok(to)
+}
+
+#[cfg(unix)]
+fn same_file(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (fs::metadata(a), fs::metadata(b)) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn same_file(a: &Path, b: &Path) -> bool {
+    matches!((fs::canonicalize(a), fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +237,32 @@ mod tests {
         write_atomic(&dir.join("fresh.md"), b"x").unwrap();
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 3, "no temporary file left behind");
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn moves_files_without_replacing_others() {
+        let dir = std::env::temp_dir().join(format!("markmode-move-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("folder")).unwrap();
+        let a = dir.join("a.md");
+        fs::write(&a, "a").unwrap();
+        fs::write(dir.join("b.md"), "b").unwrap();
+
+        assert_eq!(move_file(&a, &dir.join("b.md"), false).unwrap_err().kind(), ErrorKind::AlreadyExists);
+        assert_eq!(fs::read_to_string(dir.join("b.md")).unwrap(), "b");
+
+        let renamed = move_file(&a, &dir.join("renamed"), false).unwrap();
+        assert_eq!(renamed, dir.join("renamed.md"), "the extension is kept");
+        assert!(!a.exists());
+
+        let moved = move_file(&renamed, &dir.join("folder"), false).unwrap();
+        assert_eq!(moved, dir.join("folder/renamed.md"), "a folder takes the file in");
+
+        let nested = move_file(&moved, &dir.join("new/deeper/c.md"), false).unwrap();
+        assert_eq!(fs::read_to_string(&nested).unwrap(), "a");
+
+        move_file(&nested, &dir.join("b.md"), true).unwrap();
+        assert_eq!(fs::read_to_string(dir.join("b.md")).unwrap(), "a", "overwrite replaces");
+        fs::remove_dir_all(dir).unwrap();
     }
 }

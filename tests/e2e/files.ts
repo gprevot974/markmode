@@ -54,6 +54,26 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   await restart();
   check("nothing to restore once saved", !(await ev(() => document.getElementById("message")!.textContent))!.includes("restored"));
 
+  // :move renames the file, keeping unsaved changes and the version history.
+  await run("o /windows.md");
+  await type("ggiMoved ");
+  await press("Escape");
+  await ev(() => backend.writeText("/taken.md", "taken"));
+  await run("move taken");
+  check(":move refuses to replace a file", (await disk("/taken.md")) === "taken" && !!(await ev(() => backend.readText("/windows.md"))));
+  await run("mv renamed");
+  const moved = await ev(async () => ({
+    path: app.active.doc.path,
+    dirty: app.isDirty(app.active.doc),
+    gone: await backend.readText("/windows.md").then(() => false, () => true),
+    history: (await backend.historyList("/renamed.md")).length,
+  }));
+  check(":mv renames, keeping the extension, the unsaved changes and the history", moved.path === "/renamed.md" && moved.dirty && moved.gone && moved.history > 0, moved);
+  await run("move! taken.md");
+  await run("w");
+  check(":move! replaces, and :w then writes the new path", (await disk("/taken.md")).startsWith("Moved "), await disk("/taken.md"));
+  await run("move windows.md");
+
   // :config-open writes the settings template when there is none.
   await run("config-open");
   const template = await disk("/config/markmode/config.toml");

@@ -2,12 +2,9 @@
 
 A markdown editor with Helix keybindings, live preview and export to styled `.docx`.
 
-The idea: LLMs write markdown, people expect Word. Open the file an LLM is
-working on, read it rendered, edit it the Helix way, and export a formatted
-`.docx` when it goes to other humans.
+While LLMs love to write markdown, people expect to receive Word documents. With Markmode, open the `.md` file your LLM is working on, read it in its rendered form, use Helix-style modal editing to make changes, and effortlessly export a well-formatted `.docx` before sharing it with fellow humans.
 
 ![Leaving a comment for an agent, reviewing its edits inline, and exporting to Word](docs/demo.gif)
-
 - **Helix editing**: selection-first motions ported from helix-core, plus multiple
   cursors, text objects, surround, jump labels, registers and counts. Your
   `~/.config/helix/config.toml` applies: key remaps, theme and editor options
@@ -43,9 +40,7 @@ brew tap gprevot974/markmode https://github.com/gprevot974/markmode
 brew install --cask markmode
 ```
 
-Or download the `.dmg` from the
-[latest release](https://github.com/gprevot974/markmode/releases/latest) and
-drag Markmode to Applications.
+Or download the `.dmg` from the [latest release](https://github.com/gprevot974/markmode/releases/latest) and drag Markmode to Applications.
 
 The app is not notarized by Apple (that takes a paid developer account), so
 macOS blocks it the first time: open System Settings → Privacy & Security and
@@ -115,6 +110,7 @@ node scripts/build-docx.ts input.md [output.docx] [--style name]
 | `:w [path]`, `:wa`, `:wq`, `:wqa` | write the buffer, all buffers; and close |
 | `:q`, `:q!`, `:qa`, `:qa!` | close the window (the last one closes the app), close the app |
 | `:o [path]`, `:new` | open a file (a dialog when no path is given), new scratch buffer |
+| `:move path` (`:mv`, `:rename`), `:move! path` | rename or move the file (into a folder, when the path is one; `ideas` keeps the `.md`), its unsaved changes and history going with it; `!` replaces a file already there |
 | `:vs [path]`, `:sp [path]`, `:vnew`, `:hnew` | open in a vertical / horizontal split |
 | `:bc`, `:bco`, `:bca`, `:bn`, `:bp` | close buffer, others, all; next / previous buffer |
 | `:reload`, `:reload-all` | take the version on disk |
