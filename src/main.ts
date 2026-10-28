@@ -176,6 +176,8 @@ class Doc {
   /** The file changed on disk while there were unsaved edits here. */
   diskConflict = false;
   lastAccess = 0;
+  /** Where the window that last showed it was scrolled, and on which text. */
+  scroll: { snapshot: StateEffect<unknown>; text: Text } | null = null;
   reloadTimer: number | undefined;
 
   constructor(path: string | null, state: EditorState, format: FileFormat) {
@@ -387,6 +389,12 @@ class App implements Host {
     void backend.watch(path).catch((e) => this.message(`not watching ${basename(path)}: ${e}`, "error"));
   }
 
+  /** Keeps a window's state and scroll position on its document, for when no window shows it. */
+  private stash(win: Win) {
+    win.doc.state = win.view.state;
+    win.doc.scroll = { snapshot: win.view.scrollSnapshot(), text: win.view.state.doc };
+  }
+
   windowsShowing(doc: Doc): Win[] {
     return this.layout?.windows().filter((w) => w.doc === doc) ?? [];
   }
@@ -416,12 +424,19 @@ class App implements Host {
     const old = win.doc;
     if (old === doc) return;
     if (jump && this.docs.includes(old)) win.jumps.push({ doc: old, selection: win.view.state.selection });
-    if (!this.windowsShowing(old).some((w) => w !== win)) old.state = win.view.state;
+    if (!this.windowsShowing(old).some((w) => w !== win)) this.stash(win);
     // Another window already editing it has the live text; this one gets its
     // own state on that text, kept in step by `afterTransactions`.
     const live = this.windowsShowing(doc)[0];
     win.doc = doc;
     win.view.setState(live ? this.createState(live.view.state.doc, doc.path, live.view.state.selection, reviewOriginal(live.view.state)) : doc.state);
+    // `setState` keeps the scroller's offset from the previous document, so
+    // the view is put back where this one was, or on the cursor.
+    const scroll = live ? { snapshot: live.view.scrollSnapshot(), text: live.view.state.doc } : doc.scroll;
+    const head = win.view.state.selection.main.head;
+    win.view.dispatch({
+      effects: scroll?.text === win.view.state.doc ? scroll.snapshot : EditorView.scrollIntoView(head, { y: head ? "center" : "start" }),
+    });
     doc.lastAccess = ++this.clock;
     this.renderStatus(win);
     if (win === this.active) this.updateTitle();
@@ -741,7 +756,7 @@ class App implements Host {
   private closeWindow(win: Win, force: boolean) {
     const wins = this.layout.windows();
     if (wins.length === 1) return this.quitAll(force);
-    if (!this.windowsShowing(win.doc).some((w) => w !== win)) win.doc.state = win.view.state;
+    if (!this.windowsShowing(win.doc).some((w) => w !== win)) this.stash(win);
     const next = this.previous && this.previous !== win && wins.includes(this.previous) ? this.previous : wins.find((w) => w !== win)!;
     this.layout.remove(win);
     win.view.destroy();
@@ -753,7 +768,7 @@ class App implements Host {
     const keep = this.active;
     for (const w of this.layout.windows()) {
       if (w === keep) continue;
-      if (!this.windowsShowing(w.doc).some((o) => o !== w)) w.doc.state = w.view.state;
+      if (!this.windowsShowing(w.doc).some((o) => o !== w)) this.stash(w);
       this.layout.remove(w);
       w.view.destroy();
     }
