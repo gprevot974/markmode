@@ -74,6 +74,34 @@ export default async function ({ page, type, press, ev, check, restart }: Harnes
   check(":move! replaces, and :w then writes the new path", (await disk("/taken.md")).startsWith("Moved "), await disk("/taken.md"));
   await run("move windows.md");
 
+  // Switching documents shows each where it was, not where the last one was scrolled.
+  await ev(async () => {
+    const lines = (name: string) => Array.from({ length: 400 }, (_, i) => `${name} line ${i + 1}`).join("\n");
+    await backend.writeText("/long-a.md", lines("a"));
+    await backend.writeText("/long-b.md", lines("b"));
+  });
+  const view = async () => {
+    await page.waitForTimeout(100);
+    return ev(() => {
+      const { head } = app.view.state.selection.main;
+      const at = app.view.coordsAtPos(head);
+      const box = app.view.scrollDOM.getBoundingClientRect();
+      return { top: app.view.scrollDOM.scrollTop as number, line: app.view.state.doc.lineAt(head).number as number, seen: !!at && at.top >= box.top && at.bottom <= box.bottom };
+    });
+  };
+  await run("o /long-a.md");
+  await type("ge");
+  await run("o /long-b.md");
+  const fresh = await view();
+  check("a newly opened document shows its top, not the last one's scroll", fresh.top === 0 && fresh.line === 1 && fresh.seen, fresh);
+  await type("200G");
+  await run("o /long-a.md");
+  const returned = await view();
+  check("a buffer comes back scrolled where it was", returned.line === 400 && returned.seen && returned.top > 0, returned);
+  await run("o /long-b.md");
+  const middle = await view();
+  check("and so does the other", middle.line === 200 && middle.seen, middle);
+
   // :config-open writes the settings template when there is none.
   await run("config-open");
   const template = await disk("/config/markmode/config.toml");
