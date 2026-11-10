@@ -3,8 +3,8 @@
 #   brew install --cask markmode
 # The release workflow sets the version and checksum on each release.
 cask "markmode" do
-  version "0.1.1"
-  sha256 "208fddc57f204d6c37b983118f44ff5b00b925be276d2cdda225e52dd040d8fb"
+  version "0.1.2"
+  sha256 "641e4b37124804d765ff7afcb3b8d80e16177516d9e7890ca911081e01052dea"
 
   url "https://github.com/gprevot974/markmode/releases/download/v#{version}/Markmode_#{version}_universal.dmg"
   name "Markmode"
