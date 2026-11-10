@@ -1,6 +1,6 @@
 [package]
 name = "markmode"
-version = "0.1.1"
+version = "0.1.2"
 description = "Markdown editor with Helix keybindings and live preview"
 license = "MIT"
 edition = "2021"
