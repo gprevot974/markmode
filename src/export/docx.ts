@@ -50,6 +50,7 @@ import { defaultStyle, type ExportStyle } from "./style.ts";
 import { imageInfo } from "../images.ts";
 import { footnoteLabel, footnoteNumbers } from "../preview/footnoteSyntax.ts";
 import { texOf } from "../preview/math.ts";
+import { diagramKey, mermaidSource } from "../preview/mermaid.ts";
 import { between, definitions, exportParser, linkParts, rowCells, tableAligns } from "./tree.ts";
 
 type Alignment = (typeof AlignmentType)[keyof typeof AlignmentType];
@@ -528,8 +529,13 @@ export function buildDocument(
       case "OrderedList":
         return list(node, place, true);
       case "FencedCode":
-      case "CodeBlock":
+      case "CodeBlock": {
+        // A Mermaid diagram, drawn before the export (diagrams.ts), with the PNG Word wants beside it.
+        const diagram = mermaidSource(node, slice);
+        const key = diagram === null ? "" : diagramKey(diagram);
+        if (images.has(key) && rasters.has(key)) return children.push(imageParagraph(look, "diagram", images.get(key), rasters.get(key), place));
         return children.push(codeBlock(node, place));
+      }
       case "BlockMath":
         return children.push(new Paragraph({ children: [equation(texOf(slice(node.from, node.to)))], alignment: AlignmentType.CENTER, spacing: { before: 120, after: 160 } }));
       case "Table":

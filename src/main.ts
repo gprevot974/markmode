@@ -2314,6 +2314,8 @@ class App implements Host {
     if (!resolved.found) return this.message(`no export style named ${resolved.name} (:export-style lists them)`, "error");
     const text = this.stateOf(doc).doc.toString();
     const images = await loadImages(text, doc.path, readImage);
+    const { addDiagrams } = await import("./export/diagrams.ts");
+    await addDiagrams(text, resolved.style, images);
     let size: number;
     // Loaded on first export: the docx library is most of the bundle.
     if (format === "docx") {

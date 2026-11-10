@@ -9,8 +9,8 @@ While LLMs love to write markdown, people expect to receive Word documents. With
   cursors, text objects, surround, jump labels, registers and counts. Your
   `~/.config/helix/config.toml` applies: key remaps, theme and editor options
   (see [Helix config](#helix-config)).
-- **Live preview**: markdown renders in place, images, footnotes and math
-  (KaTeX) included. Lines holding a selection show their raw source, so every
+- **Live preview**: markdown renders in place, images, footnotes, math
+  (KaTeX) and Mermaid diagrams included. Lines holding a selection show their raw source, so every
   character stays reachable. Links and wiki-links open with `gf` (see
   [Links, images, footnotes and math](#links-images-footnotes-and-math)).
 - **Made for working with agents**: when another program (an LLM agent, a script,
@@ -236,12 +236,19 @@ To find your way in a long file:
   A dollar followed by a space, or a closing one followed by a digit, is not
   math, so prices stay prices. TeX that does not parse shows underlined, with
   KaTeX's error as its tooltip.
+- **Diagrams**: a ` ```mermaid ` code block shows as its diagram, in the
+  theme's colors; with the cursor in it, its code shows with the diagram
+  under it, drawn again as you type. A diagram that does not parse shows its
+  code, with Mermaid's error under it. Mermaid loads the first time a document
+  has a diagram.
 
 The exports carry them over. In the docx, links keep their text (a web address stays a
 link), images are placed at their size up to the page's width (an SVG with a
 PNG copy, for programs that cannot show SVG), footnotes become Word footnotes,
-and math becomes typeset Word equations. The web page keeps links as links,
-holds its images, sets footnotes at the end and typesets math. Both read the
+math becomes typeset Word equations, and diagrams become pictures (an SVG
+with a PNG copy), in the export style's colors and body font. The web page
+keeps links as links, holds its images and diagrams, sets footnotes at the
+end and typesets math. Both read the
 markdown with the editor's parser, so quotes, code blocks, strikethrough and
 nested lists come through too; raw HTML is left out of the docx.
 
@@ -655,7 +662,8 @@ src/wordCount.ts  word counts: the text a reader sees
 src/frontmatter.ts  front matter: the document's properties
 src/directives.ts directives: table widths (and the older footer, author...)
 src/preview/      live preview decorations, table rendering, and the syntax added to markdown:
-                  front matter, wiki-links, footnotes, math (math.ts, with KaTeX)
+                  front matter, wiki-links, footnotes, math (math.ts, with KaTeX),
+                  Mermaid diagrams (mermaid.ts; export/diagrams.ts draws them for the exports)
 src/export/       markdown → docx and → html, export styles (style.ts: every key), their files and reference
 src/theme/        Helix themes as CSS variables, the ones shipped (themes/), the editor's look
 src/settings.ts   your settings: ~/.config/markmode/config.toml, and its template

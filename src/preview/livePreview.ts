@@ -21,6 +21,7 @@ import { PROPERTIES } from "../frontmatter.ts";
 import { documentPath, imageUrl } from "../images.ts";
 import { footnoteLabel, footnoteNumbers } from "./footnoteSyntax.ts";
 import { MathWidget, mathBlocks, texOf } from "./math.ts";
+import { diagramReplaces, mermaidBlocks } from "./mermaid.ts";
 import { blockRefresher, rebuildNow } from "./blockRefresh.ts";
 
 /** Every line rendered, the selection's too: a document only read, as a picker's preview. */
@@ -318,6 +319,8 @@ function buildInline(view: EditorView): DecorationSet {
           case "Blockquote":
           case "FencedCode":
           case "CodeBlock": {
+            // A Mermaid diagram in place of its code (mermaid.ts).
+            if (name === "FencedCode" && diagramReplaces(state, node.node)) return;
             const cls = name === "Blockquote" ? "md-quote" : "md-codeblock";
             for (let pos = node.from; pos <= node.to; ) {
               const line = doc.lineAt(pos);
@@ -699,4 +702,4 @@ const gutterClasses = StateField.define<RangeSet<GutterMarker>>({
   provide: (f) => gutterLineClass.from(f),
 });
 
-export const livePreview = [previewLabels, totalRows, inlinePreview, tablePreview, mathBlocks, gutterClasses, blockRefresher];
+export const livePreview = [previewLabels, totalRows, inlinePreview, tablePreview, mathBlocks, mermaidBlocks, gutterClasses, blockRefresher];

@@ -14,6 +14,8 @@ import { defaultStyle } from "../src/export/style.ts";
 import { footnoteSyntax, footnoteNumbers } from "../src/preview/footnoteSyntax.ts";
 import { syntaxTree } from "@codemirror/language";
 import { mathSyntax, texOf } from "../src/preview/math.ts";
+import { diagramKey } from "../src/preview/mermaid.ts";
+import { diagramSources } from "../src/export/diagrams.ts";
 
 function stateOf(text: string) {
   const state = EditorState.create({ doc: text, extensions: markdown({ base: markdownLanguage, extensions: [wikiLinkSyntax, footnoteSyntax, mathSyntax] }) });
@@ -267,5 +269,34 @@ A [bad](javascript:alert(1)) link.
     // Front matter and directives are not text.
     expect(html).not.toContain("author: Jane");
     expect(html).not.toContain("widths:");
+  });
+});
+
+describe("Mermaid diagrams", () => {
+  const md = "Before.\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n```js\nlet a = 1;\n```\n";
+  const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="100" viewBox="0 0 300 100"><text>A</text></svg>');
+  const key = diagramKey("graph LR\n  A --> B");
+
+  it("finds the diagrams' sources", () => {
+    expect(diagramSources(md)).toEqual(["graph LR\n  A --> B"]);
+    expect(diagramSources("```Mermaid title\nflowchart TD\n```\n\n```mermaid\n```\n")).toEqual(["flowchart TD"]);
+  });
+
+  it("show drawn in the docx, as code when not drawn", async () => {
+    const drawn = await JSZip.loadAsync(await Packer.toBuffer(buildDocument(md, undefined, new Map([[key, svg]]), new Map([[key, png(600, 200)]]))));
+    const xml = await drawn.file("word/document.xml")!.async("string");
+    expect(xml).not.toContain("A --&gt; B");
+    expect(xml).toContain("let a = 1;");
+    expect(Object.keys(drawn.files).filter((f) => f.startsWith("word/media/") && !f.endsWith("/"))).toHaveLength(2);
+    const plain = await documentXml(md);
+    expect(plain.xml).toContain("A --&gt; B");
+    expect(plain.media).toHaveLength(0);
+  });
+
+  it("show drawn in the HTML page, as code when not drawn", () => {
+    const html = markdownToHtml(md, undefined, new Map([[key, svg]]));
+    expect(html).toContain('<div class="diagram"><img src="data:image/svg+xml;base64,');
+    expect(html).not.toContain("A --&gt; B");
+    expect(markdownToHtml(md)).toContain('<pre><code class="language-mermaid">graph LR');
   });
 });

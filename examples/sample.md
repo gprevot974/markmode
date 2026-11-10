@@ -69,6 +69,18 @@ $$
 \int_0^1 x^2 \, dx = \frac{1}{3}
 $$
 
+### Diagrams
+
+A ` ```mermaid ` block shows as its diagram, and exports as a picture:
+
+```mermaid
+flowchart LR
+  A[Agent edits the file] --> B{Review}
+  B -->|accept| C[Saved]
+  B -->|reject| A
+  C --> D[Export .docx]
+```
+
 That's the tour. Try `w`, `b`, `e`, `x`, `mi(`, `ms*`, Enter for jump labels, and `:export-docx`.
 
 [^aside]: The note itself, in smaller type here and as a Word footnote in the export.

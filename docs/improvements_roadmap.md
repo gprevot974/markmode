@@ -146,15 +146,9 @@ lost.*
 
 ## 8. After the first release
 
-- **Mermaid diagrams.** LLMs write Mermaid all the time, so it fits the
-  pitch.
-  - Preview: render ` ```mermaid ` blocks as an SVG widget, like math, with
-    the source shown while the cursor is inside. Load the library with a
-    dynamic `import()` only when a diagram appears: it is several MB.
-  - HTML export: inline the SVG.
-  - docx export, the hard part: Word needs a raster image (or SVG with a PNG
-    fallback). Render with `htmlLabels: false`, so the SVG can be drawn to a
-    canvas, and embed the PNG.
+- *Done:* **Mermaid diagrams** (see "Diagrams" in the README): drawn in the
+  preview, as a picture in the HTML export, and as an SVG with a PNG copy in
+  the docx, with `htmlLabels: false` so the SVG can be drawn to a canvas.
 - **Spell-check on Linux and Windows.** Keep the macOS checker: it follows the
   system languages, detects them automatically and shares the words taught in
   other apps. Add a second backend behind the same three commands:

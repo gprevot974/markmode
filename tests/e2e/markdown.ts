@@ -189,6 +189,49 @@ export default async function ({ page, type, press, ev, check }: Harness) {
 
   await type("ga");
 
+  // Mermaid: a diagram in place of its code, the code under the cursor with the diagram under it.
+  await ev(async () => {
+    await backend.writeText("/notes/diagram.md", "# Diagram\n\n```mermaid\ngraph LR\n  A[Start] --> B[End]\n```\n\n```mermaid\ngraph LR\n  A -->\n```\n\nEnd.\n");
+    await app.openPath("/notes/diagram.md");
+  });
+  await type("ge");
+  const diagrams = async () => {
+    await page.waitForFunction(() => !document.querySelector(".window.active")!.textContent!.includes("drawing the diagram"), null, { timeout: 15000 }).catch(() => {});
+    return ev(() => {
+      const win = document.querySelector(".window.active")!;
+      return {
+        drawn: win.querySelectorAll(".md-diagram img").length,
+        width: win.querySelector<HTMLImageElement>(".md-diagram img")?.naturalWidth ?? 0,
+        errors: win.querySelectorAll(".md-diagram-error").length,
+        message: win.querySelector(".md-diagram-message")?.textContent ?? "",
+        code: win.querySelectorAll(".md-codeblock").length,
+      };
+    });
+  };
+  let d = await diagrams();
+  check("a Mermaid block shows as its diagram", d.drawn === 1 && d.width > 50 && d.code === 0, d);
+  check("a diagram that does not parse shows its code and the error", d.errors === 1 && d.message.length > 0, d);
+  await type("4G");
+  await page.waitForTimeout(300);
+  d = await diagrams();
+  check("a diagram under the cursor shows its code, drawn under it", d.drawn === 1 && d.code === 4, d);
+  await type(":");
+  await type("export-html");
+  await press("Enter");
+  await page.waitForFunction(() => document.getElementById("message")!.textContent!.startsWith("exported"), null, { timeout: 15000 });
+  const page2 = await ev(() => backend.readText("/notes/diagram.html").then((f: { text: string }) => f.text).catch(() => ""));
+  check(":export-html draws the diagram, keeps the bad one as code", page2.split('<div class="diagram">').length === 2 && page2.includes('class="language-mermaid"'), page2.length);
+  await type(":");
+  await type("export-docx");
+  await press("Enter");
+  await page.waitForFunction(() => document.getElementById("message")!.textContent!.includes("diagram.docx"), null, { timeout: 15000 });
+  const parts = await ev(() => {
+    const bytes = (window as unknown as { written?: Record<string, Uint8Array> }).written?.["/notes/diagram.docx"];
+    return bytes ? [...new TextDecoder("latin1").decode(bytes).matchAll(/word\/media\/[\w-]+\.(svg|png)/g)].map((m) => m[1]) : [];
+  });
+  check(":export-docx puts the diagram as an SVG with its PNG", new Set(parts).size === 2, parts);
+  await type("ga");
+
   // C-x after [[ lists the notes.
   await type("geo[[ide");
   await press("Control+x");

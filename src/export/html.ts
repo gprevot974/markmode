@@ -13,6 +13,7 @@ import { fitWidths, parseDirective, parseWidths, widthsLineAbove } from "../dire
 import { frontMatter } from "../frontmatter.ts";
 import { footnoteLabel, footnoteNumbers } from "../preview/footnoteSyntax.ts";
 import { texOf } from "../preview/math.ts";
+import { diagramKey, mermaidSource } from "../preview/mermaid.ts";
 import { slug } from "../links.ts";
 import { imageType } from "../images.ts";
 import { defaultStyle, type ExportStyle } from "./style.ts";
@@ -250,6 +251,10 @@ export function markdownToHtml(src: string, style: ExportStyle = defaultStyle(),
       }
       case "FencedCode":
       case "CodeBlock": {
+        // A Mermaid diagram, drawn before the export (diagrams.ts).
+        const diagram = mermaidSource(node, slice);
+        const drawing = diagram !== null && images.get(diagramKey(diagram));
+        if (drawing) return `<div class="diagram"><img src="data:image/svg+xml;base64,${base64(drawing)}" alt="diagram"></div>\n`;
         const info = node.getChild("CodeInfo");
         const lang = info ? slice(info.from, info.to).trim().split(/\s/)[0] : "";
         const code = node.getChildren("CodeText").map((t) => slice(t.from, t.to)).join("\n");
@@ -362,7 +367,7 @@ h1 { font-size: ${pt("title")}; color: ${c("title")}; margin: 0 0 0.2em; line-he
 .subtitle { font-size: ${pt("subtitle")}; font-weight: 400; color: ${c("subtitle")}; border-bottom: 1.5pt solid ${c("subtitle-rule")}; padding-bottom: 0.5em; margin: 0 0 1.4em; }
 h2 { font-size: ${pt("heading")}; color: ${c("heading")}; margin: 1.6em 0 0.6em;${on("heading-rules") ? ` border-bottom: 0.75pt solid ${c("rule")}; padding-bottom: 0.25em;` : ""} }
 h3, h4, h5, h6 { font-size: ${pt("subheading")}; color: ${c("subheading")}; margin: 1.3em 0 0.5em; }
-p, ul, ol, blockquote, pre, table, .math { margin: 0 0 0.75em; }
+p, ul, ol, blockquote, pre, table, .math, .diagram { margin: 0 0 0.75em; }
 strong { font-weight: 700; }
 strong.lead { color: ${c("label")}; }
 .meta { font-size: ${pt("metadata")}; color: ${c("muted")}; }
@@ -377,7 +382,7 @@ li.done .box { background: ${c("accent")}; }
 /* Out of the flow, so the box lines up with the text whether it is checked or not. */
 li.done .box::after { content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.75em; font-weight: 700; }
 img { max-width: 100%; max-height: 9in; }
-.math { text-align: center; overflow-x: auto; }
+.math, .diagram { text-align: center; overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: ${pt("table")}; break-inside: auto; }
 tr { break-inside: avoid; }
 th, td { border: 0.5pt solid ${c("rule")}; padding: 0.3em 0.55em; text-align: left; vertical-align: top; }

@@ -366,6 +366,38 @@ body {
   text-decoration: underline wavy var(--error);
 }
 
+/* Mermaid diagrams (preview/mermaid.ts): drawn in place of their code, or under it while it is edited. */
+.md-diagram {
+  padding: 0.5em 0;
+  overflow-x: auto;
+  text-align: center;
+  font-family: var(--ui-font);
+  font-size: 0.8em;
+  color: var(--fg-dim);
+  user-select: none;
+}
+.md-diagram img {
+  max-width: 100%;
+  height: auto;
+}
+.md-diagram-error {
+  text-align: left;
+}
+.md-diagram-error pre {
+  margin: 0;
+  padding: 0 1rem;
+  font-family: var(--mono-font);
+  font-size: 1.025em;
+  line-height: 1.55;
+  color: var(--fg);
+  background: var(--bg-dim);
+}
+.md-diagram-message {
+  padding: 0.2em 1rem 0;
+  color: var(--error);
+  white-space: pre-wrap;
+}
+
 /* Images (an inline widget, shown on a line of their own). */
 .md-image {
   display: block;
